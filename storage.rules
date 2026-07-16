@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// ============================================
+// GAME OVER — Firebase Storage Security Rules
+// ============================================
+// الملفات بتترفع تحت مسار: {folder}/{uid}/... (شوف uploadFileToStorage في app.js)
+// كل مستخدم يقدر يرفع/يقرا في مجلده هو بس، المعرَّف بالـ uid بتاعه.
+// ============================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{folder}/{uid}/{fileName=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // أي مسار تاني غير معرّف: ممنوع تمامًا افتراضيًا
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

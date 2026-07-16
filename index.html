@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0a1e" />
+  <title>Game Over — لوحة إدارة الحسابات</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Firebase (compat SDK — works with the classic non-module app.js) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ============== SPLASH SCREEN ============== -->
+  <div id="splash" class="splash" aria-hidden="true">
+    <div class="splash-content">
+      <div class="splash-mark"><span class="splash-dot">G</span>AME<span class="splash-dot">_</span>OVER</div>
+      <div class="splash-tag">جاري التحميل…</div>
+      <div class="splash-loader"><span></span></div>
+    </div>
+  </div>
+
+  <!-- ============== AUTH GATE ============== -->
+  <div id="auth" class="auth hidden">
+    <div class="auth-shell">
+      <!-- ============== LOGIN FORM ============== -->
+      <form id="form-login" class="auth-form active" autocomplete="on">
+        <div class="auth-head">
+          <div class="auth-logo"><span class="auth-dot">G</span>AME<span class="auth-dot">_</span>OVER</div>
+          <h1 class="auth-title">أهلاً بعودتك</h1>
+          <p class="auth-sub">سجّل دخولك للمتابعة إلى لوحة التحكم</p>
+        </div>
+
+        <div class="field">
+          <label for="login-user">البريد الإلكتروني</label>
+          <div class="input-wrap">
+            <span class="input-icon">@</span>
+            <input type="email" id="login-user" name="email" placeholder="مثال: ahmed@email.com" autocomplete="email" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="login-pass">كلمة المرور</label>
+          <div class="input-wrap">
+            <span class="input-icon">⚿</span>
+            <input type="password" id="login-pass" name="password" placeholder="••••••••" autocomplete="current-password" required />
+            <button type="button" class="toggle-pw" data-target="login-pass" aria-label="إظهار/إخفاء">👁</button>
+          </div>
+        </div>
+
+        <div class="auth-row">
+          <label class="check">
+            <input type="checkbox" id="login-remember" />
+            <span>تذكرني على هذا الجهاز</span>
+          </label>
+        </div>
+
+        <button type="submit" class="auth-btn">تسجيل الدخول</button>
+        <div class="form-err" id="login-err"></div>
+
+        <div class="auth-footer">
+          <button type="button" class="link-btn" data-switch="signup">إنشاء حساب جديد</button>
+          <span class="dot-sep">·</span>
+          <button type="button" class="link-btn" data-switch="forgot">نسيت كلمة المرور</button>
+        </div>
+      </form>
+
+      <!-- ============== SIGNUP FORM ============== -->
+      <form id="form-signup" class="auth-form" autocomplete="on">
+        <div class="auth-head">
+          <div class="auth-logo small"><span class="auth-dot">G</span>AME<span class="auth-dot">_</span>OVER</div>
+          <h1 class="auth-title">إنشاء حساب جديد</h1>
+          <p class="auth-sub">كل حساب له مساحة بيانات منفصلة تماماً</p>
+        </div>
+
+        <div class="field">
+          <label for="signup-user">الاسم المعروض</label>
+          <div class="input-wrap">
+            <span class="input-icon">@</span>
+            <input type="text" id="signup-user" name="username" placeholder="3 أحرف على الأقل (أحرف، أرقام، _)" pattern="[A-Za-z0-9_]{3,}" autocomplete="username" required />
+          </div>
+          <div class="field-hint">يظهر في لوحة التحكم فقط، الدخول يتم بالبريد الإلكتروني.</div>
+        </div>
+
+        <div class="field">
+          <label for="signup-email">البريد الإلكتروني</label>
+          <div class="input-wrap">
+            <span class="input-icon">✉</span>
+            <input type="email" id="signup-email" name="email" placeholder="مثال: ahmed@email.com" autocomplete="email" required />
+          </div>
+          <div class="field-hint">يُستخدم لتسجيل الدخول ولاسترجاع كلمة المرور إن نسيتها.</div>
+        </div>
+
+        <div class="field">
+          <label for="signup-pass">كلمة المرور</label>
+          <div class="input-wrap">
+            <span class="input-icon">⚿</span>
+            <input type="password" id="signup-pass" name="password" placeholder="6 أحرف على الأقل" minlength="6" autocomplete="new-password" required />
+            <button type="button" class="toggle-pw" data-target="signup-pass" aria-label="إظهار/إخفاء">👁</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="signup-pass2">تأكيد كلمة المرور</label>
+          <div class="input-wrap">
+            <span class="input-icon">✓</span>
+            <input type="password" id="signup-pass2" name="confirm" placeholder="أعد كتابة كلمة المرور" minlength="6" autocomplete="new-password" required />
+          </div>
+        </div>
+
+        <div class="pw-strength" id="pw-strength" aria-hidden="true">
+          <div class="pw-bar"><span></span></div>
+          <div class="pw-label">قوة كلمة المرور</div>
+        </div>
+
+        <button type="submit" class="auth-btn">إنشاء الحساب</button>
+        <div class="form-err" id="signup-err"></div>
+
+        <div class="auth-footer">
+          <button type="button" class="link-btn" data-switch="login">لديك حساب؟ سجّل دخولك</button>
+        </div>
+      </form>
+
+      <!-- ============== FORGOT PASSWORD — via Firebase email reset link ============== -->
+      <form id="form-forgot" class="auth-form" autocomplete="off">
+        <div class="auth-head">
+          <div class="auth-logo small"><span class="auth-dot">G</span>AME<span class="auth-dot">_</span>OVER</div>
+          <h1 class="auth-title">استرجاع كلمة المرور</h1>
+          <p class="auth-sub">هنبعتلك رابط إعادة تعيين كلمة المرور على بريدك الإلكتروني</p>
+        </div>
+
+        <div class="field">
+          <label for="forgot-user">البريد الإلكتروني</label>
+          <div class="input-wrap">
+            <span class="input-icon">✉</span>
+            <input type="email" id="forgot-user" name="email" placeholder="مثال: ahmed@email.com" required />
+          </div>
+        </div>
+
+        <button type="submit" class="auth-btn" id="forgot-next">إرسال رابط الاسترجاع</button>
+        <div class="form-err" id="forgot-err"></div>
+
+        <div class="auth-footer">
+          <button type="button" class="link-btn" data-switch="login">العودة لتسجيل الدخول</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== APP ============== -->
+  <div id="app" class="app hidden">
+    <!-- Soft background pattern -->
+    <div class="bg-pattern" aria-hidden="true"></div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">G</span><span class="brand-store">AME_OVER</span>
+      </div>
+      <nav class="nav">
+        <button data-view="dashboard" class="nav-btn active">لوحة التحكم</button>
+        <button data-view="archive" class="nav-btn">الأرشيف</button>
+        <button data-view="analytics" class="nav-btn">التحليلات</button>
+        <button data-view="sales" class="nav-btn">سجل المبيعات</button>
+      </nav>
+      <div class="user">
+        <span class="user-pill"><span class="user-dot"></span> <span id="user-name-display">المستخدم</span></span>
+        <button id="logout" class="logout" title="تسجيل الخروج">خروج</button>
+      </div>
+    </header>
+
+    <!-- ===== DASHBOARD VIEW ===== -->
+    <section class="view active" id="view-dashboard">
+      <!-- Stats -->
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-icon" style="--c1:#a855f7;--c2:#c084fc">▦</div>
+          <div class="stat-label">إجمالي الحسابات</div>
+          <div class="stat-val violet" id="stat-total">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon" style="--c1:#f472b6;--c2:#ec4899">◉</div>
+          <div class="stat-label">معروض للبيع</div>
+          <div class="stat-val rose" id="stat-listed">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon" style="--c1:#4ade80;--c2:#22d97a">✓</div>
+          <div class="stat-label">تم بيعها</div>
+          <div class="stat-val teal" id="stat-sold">0</div>
+        </div>
+        <div class="stat stat-featured">
+          <div class="stat-icon" style="--c1:#fbbf24;--c2:#f59e0b">$</div>
+          <div class="stat-label">صافي الأرباح</div>
+          <div class="stat-val gold" id="stat-revenue">0 ج.م</div>
+        </div>
+      </div>
+
+      <!-- Games bar -->
+      <div class="games-bar">
+        <div class="games-list" id="games-list"></div>
+        <div class="games-actions">
+          <button id="account-details" class="add-btn" title="إنشاء تفاصيل الحساب">🧾 إنشاء تفاصيل الحساب</button>
+          <button id="customize-display" class="add-btn" title="تخصيص شكل العرض">⚙️ تخصيص شكل العرض</button>
+          <button id="add-game" class="add-btn">+ لعبة</button>
+          <button id="add-account" class="add-btn primary">+ حساب</button>
+        </div>
+      </div>
+      <div class="usd-rate-info" id="usd-rate-info">💱 جاري تحميل سعر الدولار...</div>
+
+      <!-- Cards grid -->
+      <div class="cards-grid" id="cards-grid"></div>
+    </section>
+
+    <!-- ===== ARCHIVE VIEW ===== -->
+    <section class="view" id="view-archive">
+      <div class="section-head">
+        <h2>📦 الأرشيف</h2>
+        <p>الحسابات اللي دُست عليها زر السحابة ☁️ وشغال عليها تايمر تنازلي — بترجع لوحة التحكم تلقائياً أول ما التايمر يخلّص</p>
+      </div>
+      <div class="cards-grid" id="archive-cards-grid"></div>
+    </section>
+
+    <!-- ===== ANALYTICS VIEW ===== -->
+    <section class="view" id="view-analytics">
+      <div class="section-head">
+        <h2>التحليلات والأرباح</h2>
+        <p>مراقبة الأداء المالي ومعدلات الربحية عبر الزمن</p>
+      </div>
+      <div class="analytics-grid">
+        <div class="chart-card span-2">
+          <div class="chart-head">
+            <h3>المبيعات الشهرية</h3>
+            <span class="chart-tag">Revenue / Month</span>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
+        </div>
+        <div class="stat-card stat-card-ph">
+          <div class="chart-head">
+            <h3>معدل الربح / ساعة</h3>
+            <span class="chart-tag">Profit / Hour</span>
+          </div>
+          <div class="big-num" id="profit-hour">0 <span>ج.م</span></div>
+          <div class="field inline">
+            <label>إجمالي ساعات العمل</label>
+            <input type="number" id="hours-input" placeholder="مثال: 40" min="0" />
+          </div>
+          <div class="hint">الساعات اللي قضيتها في تطوير ورفع الحسابات</div>
+        </div>
+        <div class="chart-card span-3">
+          <div class="chart-head">
+            <h3>المبيعات اليومية</h3>
+            <span class="chart-tag">Daily Trend</span>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-daily"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SALES LOG VIEW ===== -->
+    <section class="view" id="view-sales">
+      <div class="section-head">
+        <h2>سجل عمليات البيع</h2>
+        <p>سجل كامل بكل الحسابات اللي اتبعت وتواريخها وأرباحها</p>
+      </div>
+      <div class="table-wrap">
+        <table class="sales-table">
+          <thead>
+            <tr>
+              <th>الحساب</th>
+              <th>اللعبة</th>
+              <th>تاريخ البيع</th>
+              <th>سعر البيع</th>
+              <th>الربح الصافي</th>
+              <th class="sales-del-col"></th>
+            </tr>
+          </thead>
+          <tbody id="sales-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============== MODAL ============== -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="modal-title">إضافة</span>
+        <button class="modal-close" id="modal-close" aria-label="إغلاق">×</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ============== TOAST ============== -->
+  <div id="toast" class="toast"></div>
+
+  <script src="firebase-init.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
