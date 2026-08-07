@@ -24,6 +24,33 @@
   const fmt = (n) => Number(n || 0).toLocaleString('en-US');
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+  // ============= TRACKER.GG — التحديث التلقائي لمستوى الحسابات =============
+  // قائمة المنصات المعروضة في نموذج الحساب. القيمة (value) هي اللي بتتبعت
+  // للسيرفر الوسيط زي ما هي، وهو اللي بيترجمها لصيغة Tracker.gg الداخلية.
+  const TRACKER_PLATFORMS = [
+    { value: 'origin', label: 'Origin / EA App' },
+    { value: 'psn', label: 'PlayStation (PSN)' },
+    { value: 'xbl', label: 'Xbox (Gamertag)' },
+    { value: 'steam', label: 'Steam' },
+    { value: 'epic', label: 'Epic Games' },
+  ];
+
+  // خريطة "اسم اللعبة كما كتبه المستخدم" ↔ "slug اللعبة عند Tracker.gg".
+  // البنية دي مرنة: أي لعبة جديدة تتدعم مستقبلاً (Rocket League مثلاً)
+  // تتضاف كسطر واحد هنا + provider مطابق في functions/providers.
+  const TRACKER_GAMES = {
+    apex: { slug: 'apex', label: 'Apex Legends', match: /apex/i },
+    // 'rocket-league': { slug: 'rocket-league', label: 'Rocket League', match: /rocket\s*league/i },
+  };
+
+  // بيحاول يلاقي إعداد اللعبة عند Tracker.gg بمطابقة اسم اللعبة اللي
+  // المستخدم كاتبه في اللوحة (لأن الألعاب هنا بتتضاف يدوياً بأي اسم).
+  function getTrackerGameConfig(game) {
+    if (!game || !game.name) return null;
+    const entry = Object.values(TRACKER_GAMES).find(g => g.match.test(game.name));
+    return entry || null;
+  }
+
   function toast(msg, kind = '') {
     const t = $('#toast');
     t.textContent = msg;
@@ -291,6 +318,27 @@
   function cloudDb() { return window.db || null; }
   function cloudStorage() { return window.storage || null; }
   function cloudAuth() { return window.auth || null; }
+
+  // ============= TRACKER.GG — نداء السيرفر الوسيط =============
+  // بيتصل بالـ Cloud Function (functions/index.js) اللي بدورها بتتصل
+  // بـ Tracker.gg وترجع { level, rank }. مفيش أي اتصال مباشر من هنا
+  // لـ Tracker.gg نهائياً (عشان مشكلة CORS + حماية الـ API Key).
+  async function fetchLevelFromTracker(gameSlug, platform, trackerId) {
+    const base = window.TRACKER_API_BASE;
+    if (!base) {
+      throw new Error('لسه ملف tracker-config.js مش متحمّل أو TRACKER_API_BASE فاضي');
+    }
+    const res = await fetch(`${base}/getLevel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game: gameSlug, platform, trackerId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `فشل الاتصال بالسيرفر الوسيط (HTTP ${res.status})`);
+    }
+    return data; // { ok, level, rank, ... }
+  }
 
   // ============= STORAGE — generic file/image upload =============
   // Uploads any File/Blob to Firebase Storage under `${folder}/${username}/...`
@@ -1394,6 +1442,7 @@
             <div class="level-info">
               <span>المستوى <strong>${a.level}</strong> / ${a.maxLevel || 100}</span>
               <div class="level-controls">
+                ${getTrackerGameConfig(game) && a.platform && a.trackerId ? `<button class="lvl-btn" data-act="refresh-level" data-id="${esc(a.id)}" title="تحديث المستوى من Tracker.gg">🔄</button>` : ''}
                 <button class="lvl-btn" data-act="lvl" data-id="${esc(a.id)}" data-delta="-1" title="إنزال مستوى">−</button>
                 <button class="lvl-btn" data-act="lvl" data-id="${esc(a.id)}" data-delta="1" title="رفع مستوى">+</button>
               </div>
@@ -1451,6 +1500,7 @@
     if (act === 'star') toggleStar(id);
     else if (act === 'copy') copyText(btn.dataset.text, btn);
     else if (act === 'lvl') changeLevel(id, +btn.dataset.delta, btn);
+    else if (act === 'refresh-level') refreshAccountLevelFromTracker(id, btn);
     else if (act === 'status') { e.stopPropagation(); openStatusPicker(id, btn); }
     else if (act === 'boost') handleBoost(id, btn);
     else if (act === 'edit') openAccountModal(id);
@@ -1568,6 +1618,48 @@
         lvlEl.classList.add('bump', delta > 0 ? 'up' : 'down');
       }
     });
+  }
+
+  // ============= TRACKER.GG — تحديث سريع من كارت الحساب مباشرة =============
+  async function refreshAccountLevelFromTracker(id, srcBtn) {
+    const a = STATE.accounts.find(x => x.id === id);
+    if (!a) return;
+    const game = STATE.games.find(g => g.id === a.gameId);
+    const cfg = getTrackerGameConfig(game);
+    if (!cfg) return toast('اللعبة دي مش مدعومة في التحديث التلقائي', 'err');
+    if (!a.platform || !a.trackerId) return toast('حدد المنصة ومعرف التتبع من التعديل الأول', 'err');
+
+    const original = srcBtn ? srcBtn.textContent : null;
+    if (srcBtn) { srcBtn.disabled = true; srcBtn.textContent = '⏳'; }
+    try {
+      const data = await fetchLevelFromTracker(cfg.slug, a.platform, a.trackerId);
+      const before = a.level;
+      if (data.level !== null && data.level !== undefined) {
+        a.level = Math.max(0, Math.min(a.maxLevel || 100, Number(data.level)));
+      }
+      if (data.rank) a.rank = data.rank;
+      saveUserData();
+      renderCards();
+      if (a.level !== before) {
+        playSound(a.level > before ? 'level-up' : 'level-down');
+        requestAnimationFrame(() => {
+          const card = document.querySelector(`.card [data-act="refresh-level"][data-id="${CSS.escape(id)}"]`)?.closest('.card');
+          const lvlEl = card?.querySelector('.level-info strong');
+          if (lvlEl) {
+            lvlEl.classList.remove('bump', 'up', 'down');
+            void lvlEl.offsetWidth;
+            lvlEl.classList.add('bump', a.level > before ? 'up' : 'down');
+          }
+        });
+      }
+      toast(`تم التحديث من Tracker.gg — المستوى ${a.level}`, 'ok');
+    } catch (err) {
+      console.warn('Tracker.gg refresh error:', err);
+      toast(err.message || 'فشل تحديث المستوى من Tracker.gg', 'err');
+      playSound('error');
+    } finally {
+      if (srcBtn) { srcBtn.disabled = false; srcBtn.textContent = original; }
+    }
   }
 
   function cycleStatus(id) {
@@ -1718,6 +1810,19 @@
       </div>
       <div class="field-row">
         <div class="field">
+          <label>🕹️ المنصة (Platform) <span class="opt-tag">(اختياري)</span></label>
+          <select id="a-platform">
+            <option value="">— بدون —</option>
+            ${TRACKER_PLATFORMS.map(p => `<option value="${esc(p.value)}" ${a.platform === p.value ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label id="a-trackerid-label">🔎 معرف التتبع (EA Name / Riot ID / Gamertag) <span class="opt-tag">(اختياري)</span></label>
+          <input id="a-trackerid" type="text" value="${esc(a.trackerId || '')}" placeholder="مثال: PlayerName#1234" />
+        </div>
+      </div>
+      <div class="field-row" style="align-items:flex-end">
+        <div class="field">
           <label>المستوى الحالي</label>
           <input id="a-level" type="number" min="0" value="${a.level ?? 50}" />
         </div>
@@ -1725,7 +1830,11 @@
           <label>المستوى الأقصى</label>
           <input id="a-maxlevel" type="number" min="1" value="${a.maxLevel || 100}" />
         </div>
+        <div class="field">
+          <button type="button" class="btn-ghost" id="a-track-refresh" style="white-space:nowrap">🔄 جلب المستوى من Tracker.gg</button>
+        </div>
       </div>
+      <div class="field-hint" id="a-track-hint" style="margin-top:-0.6rem"></div>
       <div class="field">
         <label>الحالة</label>
         <select id="a-status">
@@ -1769,6 +1878,56 @@
       </div>
     `;
     showModal();
+
+    // ---- Tracker.gg: تحديث تلقائي للمستوى من داخل النموذج ----
+    const trackHint = $('#a-track-hint');
+    const refreshBtn = $('#a-track-refresh');
+    function updateTrackHint() {
+      const game = STATE.games.find(g => g.id === $('#a-game').value);
+      const cfg = getTrackerGameConfig(game);
+      if (!cfg) {
+        trackHint.textContent = `⚠️ التحديث التلقائي متاح حالياً لـ ${Object.values(TRACKER_GAMES).map(g => g.label).join(', ')} فقط`;
+        refreshBtn.disabled = true;
+      } else {
+        trackHint.textContent = `✓ التحديث التلقائي متاح لـ ${cfg.label} — اختار المنصة واكتب معرف التتبع بعدين دوس الزر`;
+        refreshBtn.disabled = false;
+      }
+    }
+    updateTrackHint();
+    $('#a-game').addEventListener('change', updateTrackHint);
+
+    refreshBtn.onclick = async () => {
+      const game = STATE.games.find(g => g.id === $('#a-game').value);
+      const cfg = getTrackerGameConfig(game);
+      const platform = $('#a-platform').value;
+      const trackerId = $('#a-trackerid').value.trim();
+      if (!cfg) return toast('اللعبة دي مش مدعومة في التحديث التلقائي لسه', 'err');
+      if (!platform) return toast('اختر المنصة (Platform) الأول', 'err');
+      if (!trackerId) return toast('اكتب معرف التتبع (Tracker Identifier)', 'err');
+
+      refreshBtn.disabled = true;
+      const originalLabel = refreshBtn.textContent;
+      refreshBtn.textContent = '⏳ جاري الجلب...';
+      try {
+        const data = await fetchLevelFromTracker(cfg.slug, platform, trackerId);
+        if (data.level !== null && data.level !== undefined) {
+          $('#a-level').value = data.level;
+        }
+        if (data.rank) {
+          $('#a-rank').value = data.rank;
+        }
+        toast(`تم الجلب: المستوى ${data.level ?? '—'}${data.rank ? ' — ' + data.rank : ''}`, 'ok');
+        playSound('success');
+      } catch (err) {
+        console.warn('Tracker.gg fetch error:', err);
+        toast(err.message || 'فشل جلب البيانات من Tracker.gg', 'err');
+        playSound('error');
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = originalLabel;
+      }
+    };
+
     $('#m-cancel').onclick = closeModal;
     $('#m-save').onclick = async () => {
       const gameId = $('#a-game').value;
@@ -1777,6 +1936,8 @@
       const status = $('#a-status').value;
       const info = $('#a-info').value.trim();
       const rank = $('#a-rank').value.trim();
+      const platform = $('#a-platform').value || null;
+      const trackerId = $('#a-trackerid').value.trim() || null;
       const priceRaw = $('#a-price-usd').value;
       const priceUsd = (priceRaw !== '' && !isNaN(priceRaw)) ? Number(priceRaw) : null;
       const percentRaw = $('#a-site-percentage').value;
@@ -1804,7 +1965,7 @@
 
       if (isEdit) {
         const wasSold = a.status === 'sold';
-        Object.assign(a, { gameId, level, maxLevel, status, info, rank, priceUsd, sitePercentage, notes, imageUrl });
+        Object.assign(a, { gameId, level, maxLevel, status, info, rank, priceUsd, sitePercentage, notes, imageUrl, platform, trackerId });
         if (status === 'sold' && !wasSold) {
           a.soldAt = Date.now();
           freezeSoldPrice(a, game);
@@ -1819,6 +1980,7 @@
           gameId,
           level, maxLevel,
           status, info, rank, priceUsd, sitePercentage, notes, imageUrl,
+          platform, trackerId,
           starred: false,
           starredAt: null,
           soldAt: status === 'sold' ? Date.now() : null,
