@@ -1,0 +1,10 @@
+{
+  "name": "game-over-tracker-proxy",
+  "description": "Backend proxy for Tracker.gg (Game Over Dashboard) — deployed on Vercel",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
