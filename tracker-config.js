@@ -1,11 +1,16 @@
 /* ============================================
    GAME OVER — Tracker.gg Frontend Config
    ------------------------------------------------
-   الرابط ده هو رابط الـ Cloud Function اللي عملناها في functions/index.js
-   (exports.api). مبني تلقائياً من project ID بتاعك (game-over-2f480)
-   والـ region الافتراضي (us-central1).
+   السيرفر الوسيط بقى شغال على Vercel (مش Firebase Functions)، عشان
+   Vercel مجاني بالكامل ومحتاجش ترقية لخطة Blaze.
 
-   لو غيّرت الـ region وقت firebase deploy، عدّل الرابط هنا كمان.
+   بعد ما تنشر مجلد vercel-proxy على Vercel، هتاخد رابط شكله:
+     https://your-project-name.vercel.app
+   حط الرابط ده هنا (مع /api في الآخر) بدل الرابط اللي تحت.
    ============================================ */
 
-window.TRACKER_API_BASE = "https://us-central1-game-over-2f480.cloudfunctions.net/api";
+window.TRACKER_API_BASE = "https://game-over-proxy.vercel.app/api";
+
+// ملاحظة: النسخة القديمة كانت بتشاور على Firebase Cloud Functions:
+// "https://us-central1-game-over-2f480.cloudfunctions.net/api"
+// مبقتش مستخدمة دلوقتي — سيبناها هنا كتعليق للرجوع لو احتجتها تاني.

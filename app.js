@@ -40,7 +40,7 @@
   // تتضاف كسطر واحد هنا + provider مطابق في functions/providers.
   const TRACKER_GAMES = {
     apex: { slug: 'apex', label: 'Apex Legends', match: /apex/i },
-    // 'rocket-league': { slug: 'rocket-league', label: 'Rocket League', match: /rocket\s*league/i },
+    'rocket-league': { slug: 'rocket-league', label: 'Rocket League', match: /rocket\s*league/i },
   };
 
   // بيحاول يلاقي إعداد اللعبة عند Tracker.gg بمطابقة اسم اللعبة اللي
