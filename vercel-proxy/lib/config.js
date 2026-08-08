@@ -7,10 +7,11 @@
    ============================================ */
 
 // 🔑 حط مفتاح الـ API بتاعك هنا (لو مش مستخدم Environment Variable):
-const TRN_API_KEY = process.env.TRN_API_KEY || "YOUR_TRACKER_GG_API_KEY_HERE";
+const TRN_API_KEY = process.env.TRN_API_KEY || "";
 
-// الدومينات المسموح لها تكلم البروكسي ده (CORS).
-// حط رابط Firebase Hosting بتاعك هنا (ودومينك الخاص لو عندك واحد).
+// الدومينات المسموح لها تكلم البروكسي ده (CORS) — ملحوظة: البروكسي
+// في الواقع بيرد بـ Access-Control-Allow-Origin: * لكل الدومينات،
+// فالقائمة دي للمرجعية فقط وموجودة عشان لو حبيت تقفل على دومينات محددة.
 const ALLOWED_ORIGINS = [
   "https://game-over-2f480.web.app",
   "https://game-over-2f480.firebaseapp.com",
