@@ -117,11 +117,52 @@ function buildResponse(game, platform, trackerId, result) {
     tag: result.tag ?? null,
     avatar: result.avatar ?? null,
     peakRank: result.peakRank ?? null,
+    legend: result.legend ?? null,
+    isNewToDB: result.isNewToDB ?? null,
     source: result.source ?? "official",
     apiKeyError: result.apiKeyError ?? null,
     cached: false,
   };
 }
+
+// ============= Apex Legends: جلب بيانات اللاعب مباشرة =============
+// GET /api/apex/:platform/:player  — مثال: /api/apex/psn/ALGS
+// المنطق: استعلام عادي → لو نجح نرجّع، لو اللاعب جديد/غير مسجل → Force Refresh
+// + انتظار + Retry (كل ده جوه lib/providers/apex.js).
+app.get("/apex/:platform/:player", async (req, res) => {
+  try {
+    const platform = String(req.params.platform || "").trim().toLowerCase();
+    const player = String(req.params.player || "").trim();
+
+    if (!platform || !player) {
+      return res.status(400).json({ error: "لازم تبعت: platform, player" });
+    }
+
+    const trackerId = player;
+
+    // الكاش: نفس نظام باقي الألعاب
+    const cached = cache.get("apex", platform, trackerId);
+    if (cached) {
+      return res.json({ ...cached, cached: true });
+    }
+
+    const provider = getProvider("apex");
+    const apiKey = getApiKey("apex");
+    const result = await provider(platform, trackerId, apiKey);
+
+    const body = buildResponse("apex", platform, trackerId, result);
+    cache.set("apex", platform, trackerId, body);
+    return res.json(body);
+  } catch (err) {
+    console.error("apex endpoint error:", err);
+    const status = err.statusCode || 500;
+    const message =
+      status === 404
+        ? "اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة"
+        : err.message || "خطأ غير متوقع في السيرفر";
+    return res.status(status).json({ error: message });
+  }
+});
 
 // ============= VALORANT: جلب بيانات الحساب (اسم + Tag) =============
 // GET /api/valorant/:name/:tag  — مثال: /api/valorant/TenZ/SEN
