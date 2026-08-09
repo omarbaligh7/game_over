@@ -4,18 +4,18 @@
    المصدر: HenrikDev Unofficial Valorant API
      - الـ Base URL: https://api.henrikdev.xyz
      - التوثيق: الـ API Key في الـ Header باسم Authorization
-     - الحساب (v2): /valorant/v2/account/{name}/{tag}
-         → data.account_level (مستوى الحساب)
+     - الحساب (v2): /valorant/v2/account/{name}/{tag}?force=true
+         → data.account_level (مستوى الحساب — البارامتر الرسمي force=true
+           موثّق كـ "Bypass cache and refresh" وبيروّح لـ Riot من غير كاش)
          → data.card (GUID بيتم تحويله لصورة الـ Card)
          → data.region (مهم للـ mmr endpoint)
      - الرانك (v3): /valorant/v3/mmr/{region}/{platform}/{name}/{tag}
          → data.current.tier.name (اسم الرانك)
          → data.current.rr (الـ RR الحالي)
          → data.current.elo
-     - Cache Refresh Trigger (v3): /valorant/v3/matches/{region}/{name}/{tag}?size=1
-         HenrikDev بيدي account_level مخزّن قديم — بنبعث طلب آخر مباراة
-         (Background Trigger) عشان نجبره يكلم Riot ويحدّث الحساب، وبعدها
-         نعيد جلب v2/account فبييجي account_level محدّث.
+     - Fallback للمستوى (v3): /valorant/v3/matches/{region}/{name}/{tag}?size=1
+         لو account_level مفقود — ناخد `level` اللاعب من بيانات آخر مباراة
+         (data[0].players.all_players[].level).
    ============================================ */
 
 const axios = require("axios");
@@ -40,20 +40,14 @@ function cleanTag(tag) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ============================================
-// آخر مباراة (v3/matches) — مصدر الـ account_level الفريش
+// آخر مباراة (v3/matches) — Fallback لمستوى اللاعب
 // ============================================
-// اكتشفنا إن HenrikDev بيدي account_level من كاش ثقيل على v2/account
-// (x-cache-ttl ~40 دقيقة) والكاش ده بيتجاهل الـ query params (حتى لو
-// ضفنا t= أي قيمة بيرجع HIT). والأسوأ: الـ v1/v2/v3 mmr مش بترجع
-// account_level خالص.
-//
-// الحل: آخر مباراة من v3/matches بتيجي جواها `level` لكل لاعب من بيانات
-// المباراة نفسها (لحد اللعب الأخير) — دي أسرع مصدر متاح. بنطلب المباراة
-// (اللي بتجبر HenrikDev يكلم Riot) ومنها ناخد مستوى اللاعب مباشرة.
-// مع force:true بنضيف t=timestamp عشان نحاول نقلل التخزين المؤقت (best effort).
-async function fetchLatestMatch(apiKey, region, name, tag, force) {
-  const cb = force ? `&t=${Date.now()}` : "";
-  const url = `${BASE_URL}/v3/matches/${encodeURIComponent(region)}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=1${cb}`;
+// بنستخدمها بس لو الـ account_level مفقود من الـ v2/account. آخر مباراة
+// بتيجي جواها `level` لكل لاعب (data[0].players.all_players[].level).
+// ملاحظة: مستوى المباراة = مستوى اللاعب بداية المباراة، فمش دايماً
+// أسرع مصدر بعد ليفل أب — المصدر الأساسي هو v2/account?force=true.
+async function fetchLatestMatch(apiKey, region, name, tag) {
+  const url = `${BASE_URL}/v3/matches/${encodeURIComponent(region)}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=1`;
   try {
     const response = await axios.get(url, {
       headers: { Authorization: apiKey },
@@ -84,8 +78,11 @@ function levelFromMatch(match, name, tag) {
 }
 
 // بنجيب بيانات الحساب (المستوى + الـ Card + الـ region) من الـ v2 account endpoint
-async function fetchAccount(apiKey, name, tag) {
-  const url = `${BASE_URL}/v2/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}`;
+// مع force:true بنستخدم البارامتر الرسمي ?force=true اللي موثّق في توثيق
+// HenrikDev كـ "Bypass cache and refresh" — بيجبرهم يروحوا لـ Riot من غير كاش.
+async function fetchAccount(apiKey, name, tag, force) {
+  const cb = force ? "?force=true" : "";
+  const url = `${BASE_URL}/v2/account/${encodeURIComponent(name)}/${encodeURIComponent(tag)}${cb}`;
   try {
     const response = await axios.get(url, {
       headers: { Authorization: apiKey },
@@ -159,27 +156,25 @@ async function fetchValorantProfile(platform, trackerId, apiKey, force) {
   // لو المستخدم اختار PSN نعتبرها console، والباقي pc.
   const mmrPlatform = platform === "psn" || platform === "xbl" ? "console" : "pc";
 
-  // 1) الحساب (v2/account): بناخد منه الـ region + الـ Card + الاسم.
-  //    (الـ account_level فيه كاش ثقيل ~40 دقيقة — مش مصدرنا للمستوى)
-  const account = await fetchAccount(apiKey, name, tag);
+  // 1) الحساب (v2/account): بناخد منه الـ region + الـ Card + الاسم +
+  //    account_level. مع force:true بنبعت البارامتر الرسمي ?force=true
+  //    (موثّق كـ "Bypass cache and refresh") — وده المصدر الأساسي للمستوى.
+  const account = await fetchAccount(apiKey, name, tag, force);
   const region = account.region;
   const accName = account.name || name;
   const accTag = account.tag || tag;
 
-  // 2) آخر مباراة (v3/matches): دي مصدر الـ account_level الفريش — مستوى
-  //    اللاعب جوه بيانات المباراة (لحد آخر لعب). بنجبرها تكلم Riot،
-  //    ومع force:true بنضيف t=timestamp (best effort ضد الكاش).
-  //    مش هنستنى طويل: حد أقصى 3 ثواني.
+  // 2) مستوى الحساب = account_level من الـ account (فريش مع force).
+  //    لو مفقود (نادر) → نستخرجه من بيانات آخر مباراة كـ fallback.
   let latestMatch = null;
-  if (region) {
+  let level = account.account_level ?? null;
+  if (level == null && region) {
     latestMatch = await Promise.race([
-      fetchLatestMatch(apiKey, region, accName, accTag, force),
+      fetchLatestMatch(apiKey, region, accName, accTag),
       delay(3000),
     ]);
+    level = levelFromMatch(latestMatch, accName, accTag) ?? null;
   }
-
-  // 3) مستوى الحساب = من آخر مباراة (فريش) ولو مفيش → الـ v2/account
-  const level = levelFromMatch(latestMatch, accName, accTag) ?? account.account_level ?? null;
 
   // 4) الرانك: الـ v3 mmr بياخد الـ region اللي رجع من خطوة الحساب.
   //    لو فشل (اللاعب مش رانك مثلًا) نكمّل بالمستوى بس من غير ما نوقع.
