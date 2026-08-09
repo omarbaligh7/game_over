@@ -4,15 +4,22 @@
    مصدر البيانات الوحيد: Apex Legends Status API
      GET https://api.apexlegendsstatus.com/bridge?auth=KEY&player=NAME&platform=PLATFORM
 
-   آلية التعامل الذكية مع الحسابات الجديدة:
+   آلية التعامل مع الحسابات الجديدة (غير المسجلة في قاعدة البيانات):
      1) نبعث طلب الاستعلام العادي الأول.
-     2) لو نجح (200 + global.level موجود) → نرجّع البيانات للفرونت فوراً.
-     3) لو فشل الطلب أو الحساب جديد (isNewToDB=true) أو رجع بيانات ناقصة:
-        - نبعث Force Refresh (force=true) عشان السيرفر يجمع بيانات الحساب
-          من اللعبة ويسجّله في قاعدة البيانات لأول مرة.
-        - نستنى 2-3 ثواني عشان تكتمل عملية المزامنة عند السيرفر.
-        - نعيد طلب الاستعلام العادي مرة تانية (Retry).
-     4) لو نجح الـ retry → نرجّع البيانات. لو فشل نهائياً → خطأ واضح.
+     2) لو نجح ورجعت بيانات global → نرجّع النتيجة فوراً.
+     3) لو الحساب غير موجود أو رجع "Player not found" / Error:
+        - نبعث طلب Force Refresh (force=true) عشان السيرفر يربط الحساب
+          ويسجّله في قاعدة البيانات لأول مرة.
+        - نعمل حلقة تكرارية حتى 3 محاولات (Max 3 retries):
+            * نستنى 4 ثواني (await delay(4000)) — كافية لأن سيرفرات
+              EA/ALS تخلص ربط الحساب الجديد (5-8 ثواني).
+            * نعيد طلب الـ Bridge العادي.
+            * لو نجح ورجعت بيانات الحساب → نخرج من الحلقة فوراً.
+     4) لو خلصت كل المحاولات ولسه الحساب مفيش → الـ Route يرجّع
+        استجابة 202: { "success": false, "message": "Player is being indexed..." }
+
+   ملاحظة: النطاق الرسمي الحالي هو api.apexlegendsstatus.com (النطاق القديم
+   api.mozambiquehere.com لا يتحل DNS حالياً — نفس الخدمة).
 
    الـ response بيرجع:
      global:  { name, tag, avatar, level, levelPrestige, rank: { rankName, rankDiv, rankScore }, ... }
@@ -24,7 +31,12 @@
 const axios = require("axios");
 
 const BASE_URL = "https://api.apexlegendsstatus.com/bridge";
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// دالة مساعدة للانتظار (async delay)
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// رمز خاص للدلالة على إن الحساب لسه بيتفهرَس لأول مرة (الـ Route بيحوّله لـ 202)
+const INDEXING = Symbol("apex.player.indexing");
 
 // تحويل منصات الفرونت إند لمنصات الـ API
 // الـ API بيقبل: PC (Origin/Steam), PS4, X1
@@ -49,7 +61,7 @@ async function fetchBridge(apiKey, apiPlatform, trackerId, force = false) {
     const response = await axios.get(url, {
       timeout: 30000,
     });
-    return { ok: true, data: response.data };
+    return { ok: true, data: response.data, status: response.status };
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data ? JSON.stringify(err.response.data).slice(0, 300) : "";
@@ -100,6 +112,11 @@ function parseBridgeData(json) {
   };
 }
 
+// بترجّع true لو الرد ده فيه حساب حقيقي (بيانات global كاملة بالمستوى)
+function hasProfile(parsed) {
+  return !!parsed && parsed.level > 0;
+}
+
 async function fetchApexProfile(platform, trackerId, apiKey) {
   const apiPlatform = PLATFORM_MAP[platform];
   if (!apiPlatform) {
@@ -119,48 +136,63 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
   }
 
   // ===== الخطوة 1: الطلب العادي الأول =====
-  let res = await fetchBridge(apiKey, apiPlatform, trackerId);
-  let parsed = res.ok ? parseBridgeData(res.data) : null;
+  const firstRes = await fetchBridge(apiKey, apiPlatform, trackerId);
+  const firstParsed = firstRes.ok ? parseBridgeData(firstRes.data) : null;
 
-  // لو نجح وكل البيانات الأساسية موجودة → رجّع فوراً (من غير ما نلمس السيرفر)
-  if (parsed && parsed.level > 0) {
-    parsed.source = "official";
-    return parsed;
+  // لو نجح ورجعت بيانات الحساب → رجّع فوراً (من غير ما نلمس السيرفر)
+  if (hasProfile(firstParsed)) {
+    firstParsed.source = "official";
+    return firstParsed;
   }
 
-  // ===== الخطوة 2: الحساب جديد أو ناقص → Force Refresh + انتظار + Retry =====
-  // الأسباب المحتملة: 404 (غير مسجل في قاعدة بياناتهم) أو isNewToDB=true أو بيانات ناقصة.
-  const firstError = res.error || (parsed?.isNewToDB ? "الحساب جديد في قاعدة البيانات" : "البيانات رجعت ناقصة");
+  // اللاعب مش موجود أصلاً في اللعبة (404) → خطأ نهائي من غير داعي للـ force
+  if (firstRes.status === 404 && !firstParsed) {
+    const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
+    err.statusCode = 404;
+    throw err;
+  }
 
-  // جرب الـ force مرتين متتاليتين لو أول مرة سجلت الحساب بس لسه البيانات مش جاهزة
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const forceRes = await fetchBridge(apiKey, apiPlatform, trackerId, true);
-    if (!forceRes.ok) {
-      // الـ force نفسه فشل — لو 404 فاللاعب مش موجود أصلاً في اللعبة، مفيش داعي نكمل.
-      if (forceRes.status === 404) break;
-      continue;
-    }
+  // ===== الخطوة 2: الحساب جديد/غير مسجل → Force Refresh =====
+  // بنبعث force=true عشان السيرفر يربط الحساب مع سيرفرات EA ويسجّله لأول مرة.
+  const forceRes = await fetchBridge(apiKey, apiPlatform, trackerId, true);
 
-    // نستنى 2-3 ثواني (عشوائية) عشان السيرفر يكمل المزامنة ويسجّل الحساب
-    await sleep(2000 + Math.floor(Math.random() * 1000));
+  // لو الـ force رجع 404 → اللاعب مش موجود في اللعبة أصلاً، مفيش داعي نكمل
+  if (forceRes.status === 404) {
+    const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
+    err.statusCode = 404;
+    throw err;
+  }
 
-    // ===== الخطوة 3: إعادة الطلب العادي (Retry) =====
+  // ===== الخطوة 3: حلقة Retry — حتى 3 محاولات × 4 ثواني =====
+  // الـ force بياخد 5-8 ثواني عند سيرفرات EA/ALS عشان يخلص ربط الحساب،
+  // فلازم نستنى وقت كافي قبل كل retry.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await delay(4000);
+
     const retryRes = await fetchBridge(apiKey, apiPlatform, trackerId);
     const retryParsed = retryRes.ok ? parseBridgeData(retryRes.data) : null;
-    if (retryParsed && retryParsed.level > 0) {
+
+    if (hasProfile(retryParsed)) {
       retryParsed.source = "official";
       return retryParsed;
     }
+
+    // لو رجع 404 → اللاعب مش موجود أصلاً (مش "لسه بيتفهرَس") → خطأ نهائي
+    if (retryRes.status === 404) {
+      const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
+      err.statusCode = 404;
+      throw err;
+    }
   }
 
-  // ===== الفشل الكامل =====
-  const err = new Error(
-    res.status === 404
-      ? "اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة"
-      : firstError || "فشل جلب بيانات اللاعب من Apex Legends Status بعد المحاولة"
+  // ===== الخطوة 4: خلصنا كل المحاولات ولسه الحساب مفيش =====
+  // الحساب لسه بيتفهرَس لأول مرة — الـ Route بيحوّل الرمز ده لاستجابة 202.
+  const indexingErr = new Error(
+    "Player is being indexed for the first time. Please try searching again in 10 seconds."
   );
-  err.statusCode = res.status === 404 ? 404 : 502;
-  throw err;
+  indexingErr.statusCode = 202;
+  indexingErr.code = INDEXING;
+  throw indexingErr;
 }
 
-module.exports = { fetchApexProfile, parseBridgeData };
+module.exports = { fetchApexProfile, parseBridgeData, delay, INDEXING };
