@@ -1,12 +1,15 @@
 /* ============================================
-   GAME OVER — Apex Legends Provider: apexlegendsstatus.com
+   GAME OVER — Apex Legends Provider
    ------------------------------------------------
-   بديل Tracker.gg لـ Apex Legends (مفتاح Tracker لسه تحت المراجعة).
-   المصدر: https://apexlegendsstatus.com/ (Unofficial API)
-   الـ endpoint: GET https://api.apexlegendsstatus.com/bridge
+   مصادر البيانات (بالترتيب):
+   1) apexlegendsstatus.com API — المصدر الأساسي (بيانات دقيقة ومنظمة).
+   2) Tracker.gg internal API (lib/scraper/apex.js) — Fallback للاعبين
+      الجداد اللي لسه مش متسجلين في قاعدة بيانات apexlegendsstatus.com
+      (بيترفضوا بـ 404 مهما حاولنا معاهم).
    ============================================ */
 
 const axios = require("axios");
+const { fetchApexScraped } = require("../scraper/apex");
 
 const BASE_URL = "https://api.apexlegendsstatus.com/bridge";
 
@@ -29,8 +32,8 @@ const DIVISION_NAMES = ["I", "II", "III", "IV"];
 // ============================================
 // جلب البيانات من الـ bridge بالاسم
 // ============================================
-async function fetchBridge(apiKey, apiPlatform, queryParam, queryValue) {
-  const url = `${BASE_URL}?${queryParam}=${encodeURIComponent(queryValue)}&platform=${apiPlatform}`;
+async function fetchBridge(apiKey, apiPlatform, trackerId) {
+  const url = `${BASE_URL}?player=${encodeURIComponent(trackerId)}&platform=${apiPlatform}`;
   try {
     const response = await axios.get(url, {
       headers: { Authorization: apiKey },
@@ -62,20 +65,13 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
     throw err;
   }
 
-  // ===== جلب بيانات اللاعب بالاسم مع إعادة محاولة =====
-  // ملاحظة مهمة: مش بنجيب الـ UID الأول (nametouid) لأن الـ UID أرقام أطول
-  // من Number.MAX_SAFE_INTEGER و JavaScript بتلفّها قبل ما نبعت للـ API،
-  // فبنفضل نستخدم الاسم نفسه.
-  //
-  // مشكلة اللاعبين الجداد: أول مرة الـ API بيعمل lookup في EA (Origin) ولو
-  // اللاعب لسه مفيش له بيانات متجمعة في قاعدة بياناتهم، الطلب بيفشل بـ 404
-  // "origin lookup". أول محاولة بتسجّل اللاعب عندهم وبعدها بثواني بيرجع
-  // البيانات كاملة — فبنعيد المحاولة لحد 3 مرات مع انتظار قصير بينها.
+  // ===== جلب البيانات من apexlegendsstatus.com =====
+  // بجرب بالاسم مع إعادة محاولة — اللاعب الجديد بياخد شوية ثواني يتجمع.
   let json = null;
   let lastError = null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const res = await fetchBridge(apiKey, apiPlatform, "player", trackerId);
+    const res = await fetchBridge(apiKey, apiPlatform, trackerId);
     if (res.ok && res.data?.global) {
       const g = res.data.global;
       const hasLevel = Number(g.level) > 0;
@@ -94,12 +90,15 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
 
   const global = json?.global;
 
+  // لو apexlegendsstatus رفض اللاعب (404 — غالباً لاعب جديد مش مسجل في
+  // قاعدة بياناتهم) → ننزل على Tracker.gg اللي بيشتغل مع أي لاعب فوراً.
   if (!global) {
-    const err = new Error(
-      `مش لاقيين اللاعب ده في apexlegendsstatus.com — جرّب تدور عليه الأول في موقعهم (https://apexlegendsstatus.com) وبعدين جرب تاني. (${lastError || "مفيش بيانات global"})`
-    );
-    err.statusCode = 404;
-    throw err;
+    const scraped = await fetchApexScraped(platform, trackerId);
+    return {
+      ...scraped,
+      source: "tracker-scrape",
+      apiKeyError: lastError || null,
+    };
   }
 
   // المستوى: global.level + الـ prestige (الأسطوانات المسقطة بيبقى عليها ×100)
