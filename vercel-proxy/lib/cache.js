@@ -5,10 +5,10 @@
    (أو الـ scraping) في كل طلب. بنخزن النتيجة في الذاكرة لمدة،
    وأي طلب في الفترة دي بيرجع نفس النتيجة من غير ما يلمس المصدر.
 
-   المدد:
-   - Apex: ثابت 10 دقايق (600 ثانية).
-   - Rocket League: عشوائي بين 5 و10 دقايق (300-600 ثانية) —
-     كل تحديث بياخد مدة جديدة، فمش بيبان نمط ثابت (وكأن حد
+   المدد (عشوائية لكل حساب):
+   - Apex: عشوائي بين 4 و8 دقايق (240-480 ثانية).
+   - Rocket League: عشوائي بين 5 و10 دقايق (300-600 ثانية).
+   - كل تحديث بياخد مدة جديدة، فمش بيبان نمط ثابت (وكأن حد
      بيتابع يدوي مش اسكريبت).
 
    ملحوظة: التخزين في الذاكرة (in-memory) — على Vercel بيشتغل
@@ -16,11 +16,18 @@
    الـ instances، نضيف Vercel KV / Upstash Redis بعدين.
    ============================================ */
 
-const MIN_TTL_MS = 5 * 60 * 1000; // 5 دقايق
+const MIN_TTL_MS = 4 * 60 * 1000; // 4 دقايق
 const MAX_TTL_MS = 10 * 60 * 1000; // 10 دقايق
 
+// حدود Rocket League: 5-10 دقايق
+const RL_MIN_TTL_MS = 5 * 60 * 1000;
+const RL_MAX_TTL_MS = 10 * 60 * 1000;
+
+// حدود Apex: 4-8 دقايق
+const APEX_MIN_TTL_MS = 4 * 60 * 1000;
+const APEX_MAX_TTL_MS = 8 * 60 * 1000;
+
 const ROCKET_LEAGUE = "rocket-league";
-const APEX = "apex";
 
 // التخزين: key → { data, expiresAt }
 const store = new Map();
@@ -35,13 +42,13 @@ function prune() {
   }
 }
 
-// مدة صلاحية عشوائية لـ Rocket League (5-10 دقايق) وثابتة لـ Apex
+// مدة صلاحية عشوائية — كل لعبة ليها المدى بتاعها
 function ttlFor(game) {
   if (game === ROCKET_LEAGUE) {
-    return MIN_TTL_MS + Math.floor(Math.random() * (MAX_TTL_MS - MIN_TTL_MS + 1));
+    return RL_MIN_TTL_MS + Math.floor(Math.random() * (RL_MAX_TTL_MS - RL_MIN_TTL_MS + 1));
   }
-  // Apex وأي لعبة تانية: ثابتة على 10 دقايق
-  return MAX_TTL_MS;
+  // Apex وأي لعبة تانية: 4-8 دقايق
+  return APEX_MIN_TTL_MS + Math.floor(Math.random() * (APEX_MAX_TTL_MS - APEX_MIN_TTL_MS + 1));
 }
 
 // مفتاح فريد لكل (لعبة + منصة + حساب) — نطبيع الـ trackerId عشان
