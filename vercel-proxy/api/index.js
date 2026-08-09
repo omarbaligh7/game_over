@@ -112,11 +112,62 @@ function buildResponse(game, platform, trackerId, result) {
     mmr: result.mmr ?? null,
     matches: result.matches ?? null,
     rankDetails: result.rankDetails ?? null,
+    // حقول إضافية (VALORANT): اسم الحساب + الـ Tag + صورة الـ Card + أعلى رانك
+    name: result.name ?? null,
+    tag: result.tag ?? null,
+    avatar: result.avatar ?? null,
+    peakRank: result.peakRank ?? null,
     source: result.source ?? "official",
     apiKeyError: result.apiKeyError ?? null,
     cached: false,
   };
 }
+
+// ============= VALORANT: جلب بيانات الحساب (اسم + Tag) =============
+// GET /api/valorant/:name/:tag  — مثال: /api/valorant/TenZ/SEN
+// لو المستخدم كتب الـ tag بعلامة # (زي TenZ#SEN أو TenZ/xx#123) هننضّفها.
+app.get("/valorant/:name/:tag", async (req, res) => {
+  try {
+    let { name, tag } = req.params;
+    name = String(name || "").trim();
+    tag = String(tag || "").replace(/#/g, "").trim();
+
+    if (!name || !tag) {
+      return res.status(400).json({ error: "لازم تبعت الاسم والـ Tag" });
+    }
+
+    // لو الاسم وصل بصيغة "Name#Tag" نقسمه (لو المستخدم دخل السطر كله في خانة الاسم)
+    if (name.includes("#")) {
+      const parts = name.split("#");
+      name = parts[0].trim();
+      if (!tag) tag = parts.slice(1).join("#").replace(/#/g, "").trim();
+    }
+
+    const trackerId = `${name}#${tag}`;
+
+    // الكاش: نفس نظام الألعاب التانية
+    const cached = cache.get("valorant", "riot", trackerId);
+    if (cached) {
+      return res.json({ ...cached, cached: true });
+    }
+
+    const provider = getProvider("valorant");
+    const apiKey = getApiKey("valorant");
+    const result = await provider("pc", trackerId, apiKey);
+
+    const body = buildResponse("valorant", "riot", trackerId, result);
+    cache.set("valorant", "riot", trackerId, body);
+    return res.json(body);
+  } catch (err) {
+    console.error("valorant endpoint error:", err);
+    const status = err.statusCode || err.response?.status || 500;
+    const message =
+      status === 404
+        ? "الحساب ده مش موجود على VALORANT — تأكد من الاسم والـ Tag"
+        : err.message || "خطأ غير متوقع في السيرفر";
+    return res.status(status).json({ error: message });
+  }
+});
 
 // أي مسار تاني مش متعرّف
 app.use((req, res) => {

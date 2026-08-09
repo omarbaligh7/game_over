@@ -13,6 +13,10 @@ const TRN_API_KEY = process.env.TRN_API_KEY || "";
 // (مختلف عن Tracker.gg — ده مصدر مستقل لـ Apex)
 const APEX_API_KEY = process.env.APEX_API_KEY || "5c2102130feeb58b159396a5e30f8ffa";
 
+// 🔑 مفتاح VALORANT من HenrikDev API
+// (Unofficial Valorant API — بيتشبع عبر الـ Authorization Header)
+const VALORANT_API_KEY = process.env.VALORANT_API_KEY || "HDEV-5b12ba17-5c92-4b10-97f2-dbfaa674894f";
+
 // الدومينات المسموح لها تكلم البروكسي ده (CORS) — ملحوظة: البروكسي
 // في الواقع بيرد بـ Access-Control-Allow-Origin: * لكل الدومينات،
 // فالقائمة دي للمرجعية فقط وموجودة عشان لو حبيت تقفل على دومينات محددة.
@@ -27,6 +31,7 @@ const ALLOWED_ORIGINS = [
 const GAME_API_KEYS = {
   apex: APEX_API_KEY,
   "rocket-league": TRN_API_KEY,
+  valorant: VALORANT_API_KEY,
 };
 
 // ترجع الـ API Key بتاعة لعبة معينة (أو "" لو مفيش)
@@ -34,7 +39,7 @@ function getApiKey(game) {
   return GAME_API_KEYS[game] || "";
 }
 
-module.exports = { TRN_API_KEY, APEX_API_KEY, ALLOWED_ORIGINS, getApiKey };
+module.exports = { TRN_API_KEY, APEX_API_KEY, VALORANT_API_KEY, ALLOWED_ORIGINS, getApiKey };
 
 /* ⚠️ الطريقة الأأمن (موصى بيها) — استخدام Environment Variables في Vercel:
    1) من لوحة تحكم Vercel: Project → Settings → Environment Variables

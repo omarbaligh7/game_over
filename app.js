@@ -41,6 +41,7 @@
   const TRACKER_GAMES = {
     apex: { slug: 'apex', label: 'Apex Legends', match: /apex/i },
     'rocket-league': { slug: 'rocket-league', label: 'Rocket League', match: /rocket\s*league/i },
+    valorant: { slug: 'valorant', label: 'VALORANT', match: /valorant|فالورانت|فالورنت|فالرنت/i },
   };
 
   // بيحاول يلاقي إعداد اللعبة عند Tracker.gg بمطابقة اسم اللعبة اللي

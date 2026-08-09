@@ -9,10 +9,12 @@
 
 const { fetchApexProfile } = require("./apex");
 const { fetchRocketLeagueProfile } = require("./rocket-league");
+const { fetchValorantProfile } = require("./valorant");
 
 const PROVIDERS = {
   apex: fetchApexProfile,
   "rocket-league": fetchRocketLeagueProfile,
+  valorant: fetchValorantProfile,
 };
 
 function getProvider(gameSlug) {
