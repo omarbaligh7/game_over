@@ -41,6 +41,20 @@ const SITE_URL = "https://apexlegendsstatus.com";
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+// نفس الـ headers اللي بيبعتها متصفح حقيقي عند فتح الصفحة — لازمها عشان
+// Cloudflare/السيرفر يقبل الفهرسة (طلبات الآلي العارية بتتجاهل الفهرسة).
+const BROWSER_HEADERS = {
+  "User-Agent": BROWSER_UA,
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Upgrade-Insecure-Requests": "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "same-origin",
+  "Sec-Fetch-User": "?1",
+  "Cache-Control": "max-age=0",
+};
+
 // دالة مساعدة للانتظار (async delay)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -83,14 +97,36 @@ async function fetchBridge(apiKey, apiPlatform, trackerId, force = false) {
 // ============================================
 // سيرفر ALS يرفض فهرسة الحسابات الجديدة عبر API force=true للطلبات المجانية
 // ويشترط زيارة صفحة البروفايل من واجهة الموقع (بعرض متصفح) ليفهرس الحساب
-// من سيرفرات EA. نبعث هنا GET بنفس طريقة المتصفح عشان نفعّل الفهرسة.
+// من سيرفرات EA. لاحظنا إن مجرد GET عاري (UA فقط) لا يفعّل الفهرسة — لازم
+// نعمل زيارة بنفس طريقة المتصفح الحقيقي:
+//   1) نفتح الصفحة الرئيسية الأول عشان ناخد كوكيز الجلسة (ssid).
+//   2) نفتح صفحة البروفايل بنفس الجلسة + headers متصفح كاملة + Referer.
+// زيارة صفحة البروفايل بتخلي السيرفر يبدأ الفهرسة فوراً ("Loading profile...")
+// والبيانات بتظهر خلال 5-10 ثواني.
+async function getSessionCookies() {
+  const homeRes = await axios.get(`${SITE_URL}/`, {
+    timeout: 30000,
+    maxRedirects: 5,
+    headers: BROWSER_HEADERS,
+  });
+  const setCookie = homeRes.headers["set-cookie"];
+  if (!setCookie || !Array.isArray(setCookie)) return "";
+  return setCookie.map((c) => c.split(";")[0]).join("; ");
+}
+
 async function requestProfilePage(apiPlatform, trackerId) {
-  const url = `${SITE_URL}/profile/${encodeURIComponent(apiPlatform)}/${encodeURIComponent(trackerId)}`;
   try {
+    const cookies = await getSessionCookies();
+    const headers = {
+      ...BROWSER_HEADERS,
+      ...(cookies ? { Cookie: cookies } : {}),
+      Referer: `${SITE_URL}/`,
+    };
+    const url = `${SITE_URL}/profile/${encodeURIComponent(apiPlatform)}/${encodeURIComponent(trackerId)}`;
     await axios.get(url, {
       timeout: 30000,
       maxRedirects: 5,
-      headers: { "User-Agent": BROWSER_UA },
+      headers,
     });
   } catch (err) {
     // لو فشل زيارة الصفحة (مثلاً رجع 403/CF) بنكمّل على الـ retry loop —
@@ -218,4 +254,4 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
   throw indexingErr;
 }
 
-module.exports = { fetchApexProfile, parseBridgeData, requestProfilePage, delay, INDEXING };
+module.exports = { fetchApexProfile, parseBridgeData, requestProfilePage, getSessionCookies, delay, INDEXING };
