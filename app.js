@@ -346,6 +346,51 @@
     } catch (e) { /* silent — الـ trigger مفيش مشكلة لو فشل */ }
   }
 
+  // رابط تسجيل الحساب على Apex Legends Status — نفس اللي بيعمله شريط
+  // البحث في الموقع نفسه: /profile/{platform}/{player}
+  // (ملحوظة: مسار /search/ مش موجود على الموقع — بيرجع 404).
+  function apexRegUrl(platform, player) {
+    const code = APEX_STATUS_PLATFORMS[platform] || 'PC';
+    return `https://apexlegendsstatus.com/profile/${code}/${encodeURIComponent(player)}`;
+  }
+
+  // بيعرض صندوق "الحساب جديد": زرار فتح صفحة التسجيل على ALS (تبويب جديد)
+  // + زرار "إعادة الجلب" (onRetry). بيشتغل جوه المودال أو جوه الكارت.
+  function showApexRegistrationUI(container, platform, player, onRetry) {
+    if (!container) return;
+    const old = container.querySelector('.als-reg-box');
+    if (old) old.remove();
+
+    const url = apexRegUrl(platform, player);
+    const box = document.createElement('div');
+    box.className = 'als-reg-box';
+    box.innerHTML = `
+      <div class="als-reg-msg">⚠️ هذا الحساب جديد، اضغط هنا لتسجيله على ALS لأول مرة</div>
+      <div class="als-reg-actions">
+        <a class="btn-ghost" href="${esc(url)}" target="_blank" rel="noopener">🌐 فتح صفحة التسجيل</a>
+        <button type="button" class="btn-primary" data-als-retry>🔄 إعادة الجلب</button>
+      </div>`;
+
+    // جوه الكارت نضيف الصندوق بعد شريط المستوى، وخلاف كده (المودال) نضيفه جوه الـ container
+    if (container.querySelector('.level-row')) {
+      const anchor = container.querySelector('.level-row');
+      anchor.after(box);
+    } else {
+      container.style.display = '';
+      container.appendChild(box);
+    }
+
+    const retry = box.querySelector('[data-als-retry]');
+    if (retry && onRetry) retry.addEventListener('click', onRetry);
+  }
+
+  function hideApexRegistrationUI(container) {
+    if (!container) return;
+    const box = container.querySelector('.als-reg-box');
+    if (box) box.remove();
+    if (!container.querySelector('.level-row')) container.style.display = 'none';
+  }
+
   // ============= TRACKER.GG — نداء السيرفر الوسيط =============
   // بيتصل بالـ Cloud Function (functions/index.js) اللي بدورها بتتصل
   // بـ Tracker.gg وترجع { level, rank }. مفيش أي اتصال مباشر من هنا
@@ -419,6 +464,15 @@
 
       // خلصنا المحاولات ولسه بنفهرس → خطأ واضح (من غير تحديث أي خانة)
       if (stillIndexing(res, data) || !isRealLevel(data)) {
+        if (isApex) {
+          // حساب Apex جديد لسه مش مسجل على ALS — الواجهة هتقدّم للمستخدم
+          // زر/رابط يفتح صفحة التسجيل من متصفحه (الفهرسة بتشتغل من المتصفح)
+          const err = new Error('الحساب جديد — سجّله على Apex Legends Status الأول ثم أعد الجلب');
+          err.apexNewAccount = true;
+          err.apexPlayer = trackerId;
+          err.apexPlatform = platform;
+          throw err;
+        }
         throw new Error('الحساب يحتاج وقتاً أطول للتسجيل، يرجى المحاولة بعد قليل');
       }
     }
@@ -1739,7 +1793,7 @@
       }
       if (data.rank) a.rank = data.rank;
       saveUserData();
-      renderCards();
+      renderCards(); // re-render بيشيل أي صندوق تسجيل قديم
       if (a.level !== before) {
         playSound(a.level > before ? 'level-up' : 'level-down');
         requestAnimationFrame(() => {
@@ -1755,7 +1809,21 @@
       toast(`تم التحديث من Tracker.gg — المستوى ${a.level}`, 'ok');
     } catch (err) {
       console.warn('Tracker.gg refresh error:', err);
-      toast(err.message || 'فشل تحديث المستوى من Tracker.gg', 'err');
+      if (err.apexNewAccount) {
+        // الحساب جديد → صندوق في الكارت نفسه: زرار فتح التسجيل على ALS + إعادة الجلب
+        // (بنحل عناصر الكارت من الـ DOM فريش عشان بعد renderCards بتتبني من جديد)
+        const card = document.querySelector(`.card [data-act="refresh-level"][data-id="${CSS.escape(id)}"]`)?.closest('.card') || srcBtn?.closest('.card');
+        if (card) {
+          const onRetry = () => {
+            const btn = document.querySelector(`.card [data-act="refresh-level"][data-id="${CSS.escape(id)}"]`) || srcBtn;
+            refreshAccountLevelFromTracker(id, btn);
+          };
+          showApexRegistrationUI(card, err.apexPlatform, err.apexPlayer, onRetry);
+        }
+        toast('⚠️ الحساب جديد — افتح صفحة التسجيل على ALS ثم اضغط "إعادة الجلب"', 'err');
+      } else {
+        toast(err.message || 'فشل تحديث المستوى من Tracker.gg', 'err');
+      }
       playSound('error');
     } finally {
       if (srcBtn) { srcBtn.disabled = false; srcBtn.textContent = original; }
@@ -1935,6 +2003,7 @@
         </div>
       </div>
       <div class="field-hint" id="a-track-hint" style="margin-top:-0.6rem"></div>
+      <div id="a-track-als" style="display:none"></div>
       <div class="field">
         <label>الحالة</label>
         <select id="a-status">
@@ -2009,7 +2078,10 @@
     updateTrackHint();
     $('#a-game').addEventListener('change', updateTrackHint);
 
-    refreshBtn.onclick = async () => {
+    const alsBox = $('#a-track-als');
+    refreshBtn.onclick = doFetch;
+
+    async function doFetch() {
       const game = STATE.games.find(g => g.id === $('#a-game').value);
       const cfg = getTrackerGameConfig(game);
       const platform = $('#a-platform').value;
@@ -2040,17 +2112,25 @@
         if (data.rank) {
           $('#a-rank').value = data.rank;
         }
+        hideApexRegistrationUI(alsBox);
         toast(`تم الجلب: المستوى ${data.level}${data.rank ? ' — ' + data.rank : ''}`, 'ok');
         playSound('success');
       } catch (err) {
         console.warn('Tracker.gg fetch error:', err);
-        toast(err.message || 'فشل جلب البيانات من Tracker.gg', 'err');
+        if (err.apexNewAccount) {
+          // الحساب جديد ولسه مش مسجل على ALS → زرار فتح التسجيل + إعادة الجلب
+          showApexRegistrationUI(alsBox, err.apexPlatform, err.apexPlayer, doFetch);
+          toast('⚠️ الحساب جديد — افتح صفحة التسجيل على ALS ثم اضغط "إعادة الجلب"', 'err');
+        } else {
+          hideApexRegistrationUI(alsBox);
+          toast(err.message || 'فشل جلب البيانات من Tracker.gg', 'err');
+        }
         playSound('error');
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.textContent = originalLabel;
       }
-    };
+    }
 
     $('#m-cancel').onclick = closeModal;
     $('#m-save').onclick = async () => {

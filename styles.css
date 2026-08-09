@@ -409,6 +409,31 @@ input, select, textarea { font-family: inherit; color: inherit; }
   margin-top: 0.4rem;
 }
 
+/* صندوق "الحساب الجديد" — تسجيل حساب Apex على ALS من المتصفح */
+.als-reg-box {
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--gold);
+  border-radius: var(--radius);
+  background: rgba(251, 191, 36, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.als-reg-box .als-reg-msg {
+  color: var(--gold);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.als-reg-box .als-reg-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .question-box {
   padding: 0.95rem 1rem;
   background: var(--bg-2);
