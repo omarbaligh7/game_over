@@ -101,7 +101,9 @@ async function fetchOfficial(trnPlatform, trackerId, apiKey) {
     }))
     .sort((a, b) => (b.mmr ?? 0) - (a.mmr ?? 0));
 
-  const best = rankedSegments[0] || null;
+  // "أعلى رانك" من الـ ranked playlists (1v1/2v2/3v3) مش Casual
+  const rankedIds = [10, 11, 13];
+  const best = rankedSegments.find((s) => rankedIds.includes(s.playlistId)) || rankedSegments[0] || null;
   const totalMatches = rankedSegments.reduce(
     (sum, p) => sum + (Number(p.matches) || 0),
     0

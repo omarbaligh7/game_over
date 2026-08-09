@@ -189,7 +189,13 @@ function parseInternalApi(data) {
   // نرتب تنازلياً حسب الـ MMR — أول عنصر هو أعلى رانك
   playlistSegments.sort((a, b) => (b.mmr ?? 0) - (a.mmr ?? 0));
 
-  const best = playlistSegments[0] || null;
+  // "أعلى رانك" المفروض يكون من الـ ranked playlists (1v1/2v2/3v3)
+  // مش من Casual — لأن Casual MMR غالباً بيكون الأعلى رقمياً بس مش رانك حقيقي.
+  const rankedIds = [10, 11, 13];
+  const best =
+    playlistSegments.find((p) => rankedIds.includes(p.playlistId)) ||
+    playlistSegments[0] ||
+    null;
 
   const totalMatches = playlistSegments.reduce(
     (sum, p) => sum + (Number(p.matches) || 0),
