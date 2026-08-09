@@ -54,7 +54,7 @@ app.post("/getLevel", async (req, res) => {
       return res.status(400).json({ error: "لازم تبعت: game, platform, trackerId" });
     }
 
-    if (!TRN_API_KEY || TRN_API_KEY === "YOUR_TRACKER_GG_API_KEY_HERE" || TRN_API_KEY === "a62af854-2501-4d3f-bede-66876f21fa30") {
+    if (!TRN_API_KEY || TRN_API_KEY === "YOUR_TRACKER_GG_API_KEY_HERE") {
       return res.status(500).json({
         error: "لسه محدّدتش TRN_API_KEY (في lib/config.js أو Environment Variables على Vercel)",
       });
