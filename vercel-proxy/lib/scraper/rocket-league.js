@@ -34,35 +34,46 @@ function getCurlCffi() {
 // نداء بـ curl-cffi (impersonate chrome) مع fallback لـ axios
 // لو الـ impersonate فشل أو الـ package مش متاح (مثلاً على Vercel لو
 // الـ install script اترفض)، ننزل للـ axios العادي.
+// قيم impersonate نجرّبها بالترتيب — لو وحدة رجّعت 403/429 نجرّب اللي بعدها
+// (نسخة Linux من libcurl-impersonate ممكن يختلف TLS fingerprint بتاعها عن Windows)
+const IMPERSONATE_VALUES = ["chrome136", "chrome124", "chrome110", "chrome99", "safari17_0", "firefox133"];
+
 async function httpGet(url, { headers, timeout = 15000 } = {}) {
   const curlCffi = getCurlCffi();
   if (curlCffi) {
-    try {
-      const res = await curlCffi.req.get(url, {
-        impersonate: "chrome124",
-        headers: { ...headers, Accept: headers.Accept || "application/json" },
-        timeout,
-      });
-      if (res.status >= 200 && res.status < 300) {
-        // res.data بييجي أحياناً كائن parsed وأحياناً string، وres.text بيجيب النص
-        const text =
-          typeof res.data === "string"
-            ? res.data
-            : res.data != null
-            ? JSON.stringify(res.data)
-            : res.text;
-        if (text == null) {
-          throw new Error(`curl-cffi رجّع status ${res.status} من غير body`);
+    let lastErr = null;
+    for (const imp of IMPERSONATE_VALUES) {
+      try {
+        const res = await curlCffi.req.get(url, {
+          impersonate: imp,
+          headers: { ...headers, Accept: headers.Accept || "application/json" },
+          timeout,
+        });
+        if (res.status >= 200 && res.status < 300) {
+          // res.data بييجي أحياناً كائن parsed وأحياناً string، وres.text بيجيب النص
+          const text =
+            typeof res.data === "string"
+              ? res.data
+              : res.data != null
+              ? JSON.stringify(res.data)
+              : res.text;
+          if (text == null) {
+            throw new Error(`curl-cffi رجّع status ${res.status} من غير body`);
+          }
+          return { status: res.status, data: text };
         }
-        return { status: res.status, data: text };
+        const err = new Error(`curl-cffi رجّع status ${res.status} (impersonate: ${imp})`);
+        err.statusCode = res.status;
+        lastErr = err;
+        // لو رجع 403/429 نجرّب الـ impersonate اللي بعده
+      } catch (e) {
+        lastErr = e;
+        if (e.statusCode === 403 || e.statusCode === 429) continue;
+        // أي فشل تاني (شبكة، handle، إلخ) → ننزل للـ axios
+        break;
       }
-      const err = new Error(`curl-cffi رجّع status ${res.status}`);
-      err.statusCode = res.status;
-      throw err;
-    } catch (e) {
-      if (e.statusCode === 403 || e.statusCode === 429) throw e;
-      // أي فشل تاني (شبكة، handle، إلخ) → ننزل للـ axios
     }
+    if (lastErr) throw lastErr;
   }
 
   // ==== Fallback: axios (بنية Node العادية — غالباً هتترفض بـ 403 من Cloudflare،
