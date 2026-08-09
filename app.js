@@ -401,7 +401,7 @@
   // = الحساب الجديد لسه بيتفهرَس لأول مرة. ممنوع تحديث الخانة بقيمة فارغة!
   // بنعرض حالة انتظار (onIndexing) وبعدين بنعيد طلب نفس الـ Endpoint كل
   // 5 ثواني (بحد أقصى 4 محاولات) لحد ما يرجع 200 ومعاه level حقيقي (رقم).
-  async function fetchLevelFromTracker(gameSlug, platform, trackerId, onIndexing) {
+  async function fetchLevelFromTracker(gameSlug, platform, trackerId, onIndexing, force) {
     const base = window.TRACKER_API_BASE;
     if (!base) {
       throw new Error('لسه ملف tracker-config.js مش متحمّل أو TRACKER_API_BASE فاضي');
@@ -420,7 +420,7 @@
     const post = () => fetch(`${base}/getLevel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ game: gameSlug, platform, trackerId }),
+      body: JSON.stringify({ game: gameSlug, platform, trackerId, force: !!force }),
     }).then(async (res) => ({ res, data: await res.json().catch(() => ({})) }));
 
     // بتقول إذا كانت الاستجابة لسه "بتفهرس" ولا فيها مستوى حقيقي
@@ -1785,7 +1785,8 @@
           // 202: الحساب الجديد لسه بيتفهرَس — نعرض رسالة انتظار أثناء الـ Polling
           if (srcBtn) srcBtn.textContent = indexing ? '⏳ جاري ربط الحساب...' : '⏳';
           if (indexing) toast('جاري ربط الحساب لأول مرة...', 'info');
-        }
+        },
+        true // force: زر التحديث من الكارت بيدور بيانات فريش (بيتجاوز كاش السيرفر)
       );
       const before = a.level;
       if (data.level !== null && data.level !== undefined) {
@@ -2103,7 +2104,8 @@
             // 202: الحساب الجديد لسه بيتفهرَس — نعرض رسالة انتظار أثناء الـ Polling
             refreshBtn.textContent = indexing ? '⏳ جاري ربط الحساب...' : originalLabel;
             if (indexing) toast('جاري ربط الحساب لأول مرة...', 'info');
-          }
+          },
+          true // force: زر الجلب بيدور بيانات فريش (بيتجاوز كاش السيرفر)
         );
         // مستوى حقيقي (رقم) فقط → نحدّث الخانة ونعرض النتيجة
         if (data.level !== null && data.level !== undefined) {

@@ -46,19 +46,23 @@ app.get("/ping", (req, res) => {
 });
 
 // ============= المسار الرئيسي: جلب المستوى/الرانك =============
-// Body متوقع: { game: "apex", platform: "origin", trackerId: "SomePlayer" }
+// Body متوقع: { game: "apex", platform: "origin", trackerId: "SomePlayer", force?: true }
+// "force": true → بنتجاوز الكاش ونجيب بيانات فريش من المصدر (زر "جلب المستوى").
 app.post("/getLevel", async (req, res) => {
   try {
-    const { game, platform, trackerId } = req.body || {};
+    const { game, platform, trackerId, force } = req.body || {};
 
     if (!game || !platform || !trackerId) {
       return res.status(400).json({ error: "لازم تبعت: game, platform, trackerId" });
     }
 
     // ===== الكاش: لو فيه بيانات لسه صالحة نرجّعها من غير ما نلمس المصدر =====
-    const cached = cache.get(game, platform, trackerId);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
+    // (إلا لو المستخدم ضغط Refresh → force:true بياخد بيانات فريش دايمًا)
+    if (!force) {
+      const cached = cache.get(game, platform, trackerId);
+      if (cached) {
+        return res.json({ ...cached, cached: true });
+      }
     }
 
     const provider = getProvider(game);
@@ -183,13 +187,15 @@ app.get("/apex/:platform/:player", async (req, res) => {
 });
 
 // ============= VALORANT: جلب بيانات الحساب (اسم + Tag) =============
-// GET /api/valorant/:name/:tag  — مثال: /api/valorant/TenZ/SEN
+// GET /api/valorant/:name/:tag?force=1  — مثال: /api/valorant/TenZ/SEN
 // لو المستخدم كتب الـ tag بعلامة # (زي TenZ#SEN أو TenZ/xx#123) هننضّفها.
+// ?force=1 → بنتجاوز الكاش ونجيب بيانات فريش (مع Trigger تحديث المستوى).
 app.get("/valorant/:name/:tag", async (req, res) => {
   try {
     let { name, tag } = req.params;
     name = String(name || "").trim();
     tag = String(tag || "").replace(/#/g, "").trim();
+    const force = req.query.force === "1" || req.query.force === "true";
 
     if (!name || !tag) {
       return res.status(400).json({ error: "لازم تبعت الاسم والـ Tag" });
@@ -204,10 +210,12 @@ app.get("/valorant/:name/:tag", async (req, res) => {
 
     const trackerId = `${name}#${tag}`;
 
-    // الكاش: نفس نظام الألعاب التانية
-    const cached = cache.get("valorant", "riot", trackerId);
-    if (cached) {
-      return res.json({ ...cached, cached: true });
+    // الكاش: نفس نظام الألعاب التانية (إلا لو ?force=1)
+    if (!force) {
+      const cached = cache.get("valorant", "riot", trackerId);
+      if (cached) {
+        return res.json({ ...cached, cached: true });
+      }
     }
 
     const provider = getProvider("valorant");
