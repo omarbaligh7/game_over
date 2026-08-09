@@ -320,6 +320,32 @@
   function cloudStorage() { return window.storage || null; }
   function cloudAuth() { return window.auth || null; }
 
+  // ============= Apex Legends Status — Frontend Trigger =============
+  // فهرسة/تسجيل الحساب الجديد على apexlegendsstatus.com لازم يحصل من
+  // متصفح حقيقي (السيرفر بيعتبر الآلي Cloudflare/باي-pass ويتجاهله).
+  // فنبعث طلب مباشر من متصفح المستخدم لصفحة البروفايل (no-cors) قبل ما
+  // نسأل سيرفرنا — وده بيفعّل فهرسة الحساب من سيرفرات EA.
+  const APEX_STATUS_PLATFORMS = {
+    origin: 'PC', // Origin / EA App
+    steam: 'PC',  // Steam
+    epic: 'PC',   // Epic
+    psn: 'PS4',   // PlayStation
+    xbl: 'X1',    // Xbox
+  };
+
+  function fireApexStatusTrigger(platform, player) {
+    if (!platform || !player) return;
+    const code = APEX_STATUS_PLATFORMS[platform] || 'PC';
+    const url = `https://apexlegendsstatus.com/profile/${code}/${encodeURIComponent(player)}`;
+    try {
+      // 1) fetch من المتصفح — no-cors: مش بنقرأ الرد لكن الطلب بيتنفذ فعلاً
+      fetch(url, { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+      // 2) طلب صورة — GET إضافي من نفس المتصفح (بتزيد فرصة الفهرسة)
+      const img = new Image();
+      img.src = url;
+    } catch (e) { /* silent — الـ trigger مفيش مشكلة لو فشل */ }
+  }
+
   // ============= TRACKER.GG — نداء السيرفر الوسيط =============
   // بيتصل بالـ Cloud Function (functions/index.js) اللي بدورها بتتصل
   // بـ Tracker.gg وترجع { level, rank }. مفيش أي اتصال مباشر من هنا
@@ -334,6 +360,16 @@
     const base = window.TRACKER_API_BASE;
     if (!base) {
       throw new Error('لسه ملف tracker-config.js مش متحمّل أو TRACKER_API_BASE فاضي');
+    }
+
+    const isApex = gameSlug === 'apex';
+
+    // قبل أول استعلام لسيرفرنا: نطلق Trigger فهرسة مباشر من متصفح المستخدم
+    // على apexlegendsstatus.com (الالتفاف على Cloudflare)، ونستنى 3 ثواني
+    // عشان الفهرسة تبدأ قبل ما نجيب البيانات من الـ API بتاعنا.
+    if (isApex) {
+      fireApexStatusTrigger(platform, trackerId);
+      await new Promise(r => setTimeout(r, 3000));
     }
 
     const post = () => fetch(`${base}/getLevel`, {
@@ -361,6 +397,11 @@
 
       for (let attempt = 1; attempt <= 4; attempt++) {
         await new Promise(r => setTimeout(r, 5000)); // poll كل 5 ثواني
+
+        // نعيد إطلاق الـ Trigger من المتصفح مع كل محاولة عشان نفضّل
+        // منبهين السيرفر إن الحساب لسه مطلوب فهرسته
+        if (isApex) fireApexStatusTrigger(platform, trackerId);
+
         const next = await post();
         res = next.res;
         data = next.data;
