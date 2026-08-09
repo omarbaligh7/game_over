@@ -77,9 +77,9 @@ app.post("/getLevel", async (req, res) => {
     // لو مفيش مفتاح رسمي للعبة → ننزل مباشرة للـ scraping fallback
     let result;
     if (!apiKey) {
-      result = await provider(platform, trackerId, null);
+      result = await provider(platform, trackerId, null, force);
     } else {
-      result = await provider(platform, trackerId, apiKey);
+      result = await provider(platform, trackerId, apiKey, force);
     }
 
     const body = buildResponse(game, platform, trackerId, result);
@@ -220,7 +220,7 @@ app.get("/valorant/:name/:tag", async (req, res) => {
 
     const provider = getProvider("valorant");
     const apiKey = getApiKey("valorant");
-    const result = await provider("pc", trackerId, apiKey);
+    const result = await provider("pc", trackerId, apiKey, force);
 
     const body = buildResponse("valorant", "riot", trackerId, result);
     cache.set("valorant", "riot", trackerId, body);

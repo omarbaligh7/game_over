@@ -40,26 +40,47 @@ function cleanTag(tag) {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ============================================
-// Background Trigger — تحديث كاش الحساب على HenrikDev
+// آخر مباراة (v3/matches) — مصدر الـ account_level الفريش
 // ============================================
-// سيرفر HenrikDev بيدي بيانات الحساب (account_level) من كاش قديم محفوظ
-// عندهم، وما بيحدّثوش إلا لو طلبناهم يجيبو آخر مباراة للاعب من سيرفرات
-// Riot المباشرة. فبنبعث طلب جانبي لـ:
-//   GET /valorant/v3/matches/{region}/{name}/{tag}?size=1
-// اللي بيجبرهم يتصلوا بـ Riot ويحدّثوا بيانات اللاعب، وبعدها الـ v2/account
-// بيرجّع account_level محدّث. الـ trigger ده مش خطأ قاتل لو فشل — بنكمّل
-// بآخر مستوى معروف.
-async function fetchMatchesTrigger(apiKey, region, name, tag) {
-  const url = `${BASE_URL}/v3/matches/${encodeURIComponent(region)}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=1`;
+// اكتشفنا إن HenrikDev بيدي account_level من كاش ثقيل على v2/account
+// (x-cache-ttl ~40 دقيقة) والكاش ده بيتجاهل الـ query params (حتى لو
+// ضفنا t= أي قيمة بيرجع HIT). والأسوأ: الـ v1/v2/v3 mmr مش بترجع
+// account_level خالص.
+//
+// الحل: آخر مباراة من v3/matches بتيجي جواها `level` لكل لاعب من بيانات
+// المباراة نفسها (لحد اللعب الأخير) — دي أسرع مصدر متاح. بنطلب المباراة
+// (اللي بتجبر HenrikDev يكلم Riot) ومنها ناخد مستوى اللاعب مباشرة.
+// مع force:true بنضيف t=timestamp عشان نحاول نقلل التخزين المؤقت (best effort).
+async function fetchLatestMatch(apiKey, region, name, tag, force) {
+  const cb = force ? `&t=${Date.now()}` : "";
+  const url = `${BASE_URL}/v3/matches/${encodeURIComponent(region)}/${encodeURIComponent(name)}/${encodeURIComponent(tag)}?size=1${cb}`;
   try {
-    await axios.get(url, {
+    const response = await axios.get(url, {
       headers: { Authorization: apiKey },
       timeout: 20000,
     });
+    return response.data?.data?.[0] || null;
   } catch (err) {
     // 404 = مفيش مباريات/منطقة غلط، 429 = rate limit... كلها مش قاتلة.
-    console.warn("Valorant matches trigger failed:", err.response?.status || err.message);
+    console.warn("Valorant matches fetch failed:", err.response?.status || err.message);
+    return null;
   }
+}
+
+// نستخرج مستوى اللاعب من بيانات آخر مباراة (بيانات المباراة = فريش لحظي).
+// بندور على اللاعب بالاسم والـ tag، ولو مش لاقيينه بناخد أول لاعب.
+function levelFromMatch(match, name, tag) {
+  if (!match) return null;
+  const players = match.players?.all_players;
+  if (!Array.isArray(players) || !players.length) return null;
+  const p =
+    players.find(
+      (x) =>
+        String(x.name).toLowerCase() === String(name).toLowerCase() &&
+        String(x.tag).toLowerCase() === String(tag).toLowerCase()
+    ) || players[0];
+  const lvl = Number(p?.level);
+  return !Number.isNaN(lvl) && lvl > 0 ? lvl : null;
 }
 
 // بنجيب بيانات الحساب (المستوى + الـ Card + الـ region) من الـ v2 account endpoint
@@ -115,7 +136,7 @@ async function fetchMmr(apiKey, region, platform, name, tag) {
   }
 }
 
-async function fetchValorantProfile(platform, trackerId, apiKey) {
+async function fetchValorantProfile(platform, trackerId, apiKey, force) {
   // في VALORANT الـ "trackerId" هو الـ Riot ID بصيغة "Name#Tag".
   // نقدر نقسمه هنا لو جاله كده، حتى لو الـ endpoint بيبعته منفصل.
   const rawId = String(trackerId || "").trim();
@@ -138,34 +159,33 @@ async function fetchValorantProfile(platform, trackerId, apiKey) {
   // لو المستخدم اختار PSN نعتبرها console، والباقي pc.
   const mmrPlatform = platform === "psn" || platform === "xbl" ? "console" : "pc";
 
-  // 1) الحساب الأول: بنجيب الـ region (لازمها لطلب المباريات والـ mmr)
+  // 1) الحساب (v2/account): بناخد منه الـ region + الـ Card + الاسم.
+  //    (الـ account_level فيه كاش ثقيل ~40 دقيقة — مش مصدرنا للمستوى)
   const account = await fetchAccount(apiKey, name, tag);
   const region = account.region;
+  const accName = account.name || name;
+  const accTag = account.tag || tag;
 
-  // 2) Background Trigger: بنطلب آخر مباراة (size=1) عشان نجبر HenrikDev
-  //    يتصل بـ Riot Games مباشرة ويحدّث كاش الحساب — فـ account_level
-  //    في الرد اللي بعده يبقى محدّث (مش قديم مخزّن).
-  //    مش هنستنى طويل: حد أقصى 3 ثواني للـ trigger + مهلة قصيرة للانتشار.
-  await Promise.race([
-    fetchMatchesTrigger(apiKey, region, account.name || name, account.tag || tag),
-    delay(3000),
-  ]);
-  await delay(1500);
-
-  // 3) نعيد جلب الحساب بعد الـ trigger → account_level المحدّث.
-  //    لو الـ re-fetch فشل (نادر) ننزل على بيانات الخطوة الأولى.
-  let freshAccount = account;
-  try {
-    freshAccount = await fetchAccount(apiKey, account.name || name, account.tag || tag);
-  } catch (err) {
-    console.warn("Valorant re-fetch after trigger failed, using first fetch:", err.message);
+  // 2) آخر مباراة (v3/matches): دي مصدر الـ account_level الفريش — مستوى
+  //    اللاعب جوه بيانات المباراة (لحد آخر لعب). بنجبرها تكلم Riot،
+  //    ومع force:true بنضيف t=timestamp (best effort ضد الكاش).
+  //    مش هنستنى طويل: حد أقصى 3 ثواني.
+  let latestMatch = null;
+  if (region) {
+    latestMatch = await Promise.race([
+      fetchLatestMatch(apiKey, region, accName, accTag, force),
+      delay(3000),
+    ]);
   }
+
+  // 3) مستوى الحساب = من آخر مباراة (فريش) ولو مفيش → الـ v2/account
+  const level = levelFromMatch(latestMatch, accName, accTag) ?? account.account_level ?? null;
 
   // 4) الرانك: الـ v3 mmr بياخد الـ region اللي رجع من خطوة الحساب.
   //    لو فشل (اللاعب مش رانك مثلًا) نكمّل بالمستوى بس من غير ما نوقع.
   let mmr = null;
   try {
-    mmr = await fetchMmr(apiKey, region, mmrPlatform, freshAccount.name || name, freshAccount.tag || tag);
+    mmr = await fetchMmr(apiKey, region, mmrPlatform, accName, accTag);
   } catch (err) {
     if (err.statusCode === 404 || err.response?.status === 404) {
       // اللاعب مش عنده بيانات رانك بعد — مش خطأ، بس مفيش rank.
@@ -179,16 +199,16 @@ async function fetchValorantProfile(platform, trackerId, apiKey) {
   const isRated = currentTier && currentTier !== "Unrated";
 
   return {
-    name: freshAccount.name || name,
-    tag: freshAccount.tag || tag,
-    level: freshAccount.account_level ?? null,
+    name: accName,
+    tag: accTag,
+    level,
     rank: isRated ? currentTier : null,
     rankScore: mmr?.current?.rr ?? null,
     mmr: mmr?.current?.elo ?? null,
     peakRank: mmr?.peak?.tier?.name ?? null,
-    avatar: cardImageUrl(freshAccount.card),
+    avatar: cardImageUrl(account.card),
     source: "henrikdev",
-    raw: { account: freshAccount, mmr },
+    raw: { account, mmr, latestMatch },
   };
 }
 
