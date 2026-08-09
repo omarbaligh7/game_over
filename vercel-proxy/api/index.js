@@ -22,6 +22,7 @@ const express = require("express");
 const cors = require("cors");
 const { getApiKey } = require("../lib/config");
 const { getProvider, supportedGames } = require("../lib/providers");
+const cache = require("../lib/cache");
 
 const app = express();
 app.use(express.json());
@@ -54,6 +55,12 @@ app.post("/getLevel", async (req, res) => {
       return res.status(400).json({ error: "لازم تبعت: game, platform, trackerId" });
     }
 
+    // ===== الكاش: لو فيه بيانات لسه صالحة نرجّعها من غير ما نلمس المصدر =====
+    const cached = cache.get(game, platform, trackerId);
+    if (cached) {
+      return res.json({ ...cached, cached: true });
+    }
+
     const provider = getProvider(game);
     if (!provider) {
       return res.status(400).json({
@@ -64,54 +71,52 @@ app.post("/getLevel", async (req, res) => {
     const apiKey = getApiKey(game);
 
     // لو مفيش مفتاح رسمي للعبة → ننزل مباشرة للـ scraping fallback
+    let result;
     if (!apiKey) {
-      const result = await provider(platform, trackerId, null);
-      if (result.source === "scrape") {
-        return res.json({
-          ok: true,
-          game,
-          platform,
-          trackerId,
-          level: result.level,
-          rank: result.rank,
-          mmr: result.mmr ?? null,
-          matches: result.matches ?? null,
-          rankDetails: result.rankDetails ?? null,
-          source: result.source ?? "official",
-          apiKeyError: result.apiKeyError ?? "API Key غير متحدد للعبة",
-        });
-      }
+      result = await provider(platform, trackerId, null);
+    } else {
+      result = await provider(platform, trackerId, apiKey);
     }
 
-    const result = await provider(platform, trackerId, apiKey);
+    const body = buildResponse(game, platform, trackerId, result);
 
-    if (result.level === null && result.rank === null) {
-      return res.status(404).json({
-        error: "الحساب اتلاقى بس مفيش بيانات مستوى/رانك واضحة في رد Tracker.gg",
-      });
-    }
+    // خزن النتيجة في الكاش (مدة: ثابتة 10 دقايق لـ Apex، عشوائية 5-10 لـ Rocket League)
+    cache.set(game, platform, trackerId, body);
 
-    return res.json({
-      ok: true,
-      game,
-      platform,
-      trackerId,
-      level: result.level,
-      rank: result.rank,
-      rankScore: result.rankScore ?? null,
-      arenaRank: result.arenaRank ?? null,
-      arenaRankScore: result.arenaRankScore ?? null,
-      mmr: result.mmr ?? null,
-      matches: result.matches ?? null,
-      rankDetails: result.rankDetails ?? null,
-      source: result.source ?? "official",
-    });
+    return res.json(body);
   } catch (err) {
     console.error("getLevel error:", err);
     const status = err.statusCode || 500;
     return res.status(status).json({ error: err.message || "خطأ غير متوقع في السيرفر" });
   }
 });
+
+// بتبني جسم الرد الموحد من نتيجة الـ provider
+function buildResponse(game, platform, trackerId, result) {
+  if (result.level === null && result.rank === null) {
+    const err = new Error("الحساب اتلاقى بس مفيش بيانات مستوى/رانك واضحة في رد المصدر");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return {
+    ok: true,
+    game,
+    platform,
+    trackerId,
+    level: result.level,
+    rank: result.rank,
+    rankScore: result.rankScore ?? null,
+    arenaRank: result.arenaRank ?? null,
+    arenaRankScore: result.arenaRankScore ?? null,
+    mmr: result.mmr ?? null,
+    matches: result.matches ?? null,
+    rankDetails: result.rankDetails ?? null,
+    source: result.source ?? "official",
+    apiKeyError: result.apiKeyError ?? null,
+    cached: false,
+  };
+}
 
 // أي مسار تاني مش متعرّف
 app.use((req, res) => {
