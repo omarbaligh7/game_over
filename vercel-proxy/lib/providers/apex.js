@@ -6,20 +6,18 @@
 
    آلية التعامل مع الحسابات الجديدة (غير المسجلة في قاعدة البيانات):
      1) نبعث طلب الاستعلام العادي الأول.
-     2) لو نجح ورجعت بيانات global → نرجّع النتيجة فوراً.
+     2) لو نجح ورجعت بيانات global → نرجّع النتيجة فوراً (200 OK).
      3) لو الحساب غير موجود أو رجع "Player not found" / Missing Global Data:
-        - نبعث طلب HTTP GET محاكي لمتصفح حقيقي لصفحة البروفايل على الموقع
-          الأساسي:
-            https://apexlegendsstatus.com/profile/{platform}/{player_name}
-          مع هيدر User-Agent (Chrome) — لأن سيرفر ALS يرفض فهرسة الحسابات
-          الجديدة عبر force=true للطلبات المجانية ويشترط زيارة واجهة الموقع
-          الأساسية لتفعيل الفهرسة من سيرفرات EA.
-        - نستنى 3 ثواني حتى يخلص الموقع معالجة وفهرسة الحساب.
-        - نعمل حلقة تكرارية حتى 3 محاولات (Max 3 retries):
-            * نعيد طلب الـ Bridge العادي.
-            * لو نجح ورجعت بيانات الحساب → نخرج من الحلقة فوراً.
-     4) لو خلصت كل المحاولات ولسه الحساب مفيش → الـ Route يرجّع
-        استجابة 202: { "success": false, "message": "Player is being indexed..." }
+        - نطلق طلب الفهرسة (Trigger) في الخلفية لمرة واحدة:
+            * نفتح الرئيسية ناخد كوكيز الجلسة (ssid).
+            * نفتح صفحة البروفايل بنفس الجلسة + headers متصفح كاملة.
+            * ندخل /core/interface-v2 (نفس ما يفعله متصفح المستخدم بالظبط)
+              — ده اللي بيفعّل فهرسة الحساب من سيرفرات EA.
+        - من غير ما نستنى أي Retry Loop طويلة (مشكلة Vercel Timeout):
+            * نرجّع فوراً استجابة 202:
+              { "indexing": true, "message": "Player is being indexed. Please poll again in 5 seconds." }
+        - الـ Frontend هو اللي بيعمل Polling (كل 5 ثواني، حتى 4 محاولات)
+          لحد ما الـ API يرجع 200 بالبيانات.
 
    ملاحظة: النطاق الرسمي الحالي هو api.apexlegendsstatus.com (النطاق القديم
    api.mozambiquehere.com لا يتحل DNS حالياً — نفس الخدمة).
@@ -224,7 +222,7 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
   const firstRes = await fetchBridge(apiKey, apiPlatform, trackerId);
   const firstParsed = firstRes.ok ? parseBridgeData(firstRes.data) : null;
 
-  // لو نجح ورجعت بيانات الحساب → رجّع فوراً (من غير ما نلمس السيرفر)
+  // لو البيانات موجودة → رجّع فوراً (200 OK) من غير ما نلمس السيرفر
   if (hasProfile(firstParsed)) {
     firstParsed.source = "official";
     return firstParsed;
@@ -232,46 +230,26 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
 
   // ملاحظة: الـ bridge بيرجع 404 حتى للاعبين الموجودين في اللعبة لكن لسه
   // مش مسجلين في قاعدة بيانات الموقع (الـ body بيدّي 404 فارغ). فمينفعش
-  // نستنتج "اللاعب غير موجود" من 404 قبل ما نجرب الفهرسة.
+  // نستنتج "اللاعب غير موجود" من 404 قبل ما نطلق الفهرسة.
 
-  // ===== الخطوة 2: الحساب جديد/غير مسجل → محاكاة زيارة المتصفح =====
-  // بنعمل نفس اللي بيعمله المتصفح: نفتح الرئيسية ناخد كوكيز، نفتح صفحة
-  // البروفايل، ثم ندخل /core/interface-v2 (اللي بيفعّل الفهرسة من EA).
-  await requestProfilePage(apiPlatform, trackerId);
+  // ===== الخطوة 2: حساب جديد/غير مسجل → إطلاق الفهرسة في الخلفية =====
+  // بنعمل نفس اللي بيعمله المتصفح: الرئيسية (كوكيز) → صفحة البروفايل →
+  // /core/interface-v2 (بيفعّل فهرسة الحساب من EA). من غير Retry Loop.
+  // بنستنى لحد 3 ثواني كحد أقصى عشان الطلب يتنقل، وبعدين نرجّع 202 فوراً
+  // والـ Frontend هو اللي بيكمّل الـ Polling.
+  await Promise.race([
+    requestProfilePage(apiPlatform, trackerId),
+    delay(3000),
+  ]);
 
-  // ===== الخطوة 3: انتظار المعالجة + حلقة Retry — حتى 4 محاولات =====
-  // الموقع بياخد وقت عشان يخلص فهرسة الحساب الجديد من EA، والـ bridge نفسه
-  // بياخد 5-10 ثواني عشان يحدّث بياناته. بنستنى 5 ثواني قبل كل محاولة
-  // عشان ندي الفهرسة فرصة كاملة (إجمالي ~20 ثانية).
-  let lastRes = firstRes;
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    await delay(5000);
-
-    const retryRes = await fetchBridge(apiKey, apiPlatform, trackerId);
-    lastRes = retryRes;
-    const retryParsed = retryRes.ok ? parseBridgeData(retryRes.data) : null;
-
-    if (hasProfile(retryParsed)) {
-      retryParsed.source = "official";
-      return retryParsed;
-    }
-  }
-
-  // ===== الخطوة 4: خلصنا كل المحاولات ولسه الحساب مفيش =====
-  // - لو bridge لسه راجع 404 → اللاعب غير موجود في اللعبة أصلاً.
-  // - لو bridge راجع 200 لكن بلا بيانات global → لسه بيتفهرَس → 202.
-  if (lastRes.status === 404) {
-    const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
-    err.statusCode = 404;
-    throw err;
-  }
-
-  // الحساب لسه بيتفهرَس لأول مرة — الـ Route بيحوّل الرمز ده لاستجابة 202.
-  const indexingErr = new Error(
-    "Player is being indexed for the first time. Please try searching again in 10 seconds."
-  );
+  // ===== الخطوة 3: الـ Frontend بيتصل تاني كل 5 ثواني (Polling) =====
+  // كل استعلام جديد بيحاول bridge الأول:
+  //   - لو رجع 200 بالبيانات → نرجّعها فوراً.
+  //   - لو لسه 404 → نطلق الـ trigger تاني (سريع) ونرجع 202.
+  const indexingErr = new Error("Player is being indexed. Please poll again in 5 seconds.");
   indexingErr.statusCode = 202;
   indexingErr.code = INDEXING;
+  indexingErr.indexing = true;
   throw indexingErr;
 }
 

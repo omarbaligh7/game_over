@@ -88,11 +88,11 @@ app.post("/getLevel", async (req, res) => {
     console.error("getLevel error:", err);
     const status = err.statusCode || 500;
 
-    // 202: الحساب لسه بيتفهرَس لأول مرة في قاعدة البيانات — نرجّع رسالة واضحة
+    // 202: الحساب لسه بيتفهرَس لأول مرة — نطلق الـ Polling من الفرونت
     if (status === 202) {
       return res.status(202).json({
-        success: false,
-        message: "Player is being indexed for the first time. Please try searching again in 10 seconds.",
+        indexing: true,
+        message: "Player is being indexed. Please poll again in 5 seconds.",
       });
     }
 
@@ -166,11 +166,11 @@ app.get("/apex/:platform/:player", async (req, res) => {
     console.error("apex endpoint error:", err);
     const status = err.statusCode || 500;
 
-    // 202: الحساب لسه بيتفهرَس لأول مرة في قاعدة البيانات — نرجّع رسالة واضحة
+    // 202: الحساب لسه بيتفهرَس لأول مرة — نطلق الـ Polling من الفرونت
     if (status === 202) {
       return res.status(202).json({
-        success: false,
-        message: "Player is being indexed for the first time. Please try searching again in 10 seconds.",
+        indexing: true,
+        message: "Player is being indexed. Please poll again in 5 seconds.",
       });
     }
 

@@ -324,17 +324,37 @@
   // بيتصل بالـ Cloud Function (functions/index.js) اللي بدورها بتتصل
   // بـ Tracker.gg وترجع { level, rank }. مفيش أي اتصال مباشر من هنا
   // لـ Tracker.gg نهائياً (عشان مشكلة CORS + حماية الـ API Key).
-  async function fetchLevelFromTracker(gameSlug, platform, trackerId) {
+  //
+  // Two-Step Async: لما السيرفر الوسيط يرجع 202 (indexing:true) معناها
+  // إن الحساب الجديد لسه بيتفهرَس لأول مرة — بنعمل Polling من المتصفح
+  // (إعادة الطلب كل 5 ثواني، بحد أقصى 4 محاولات) لحد ما نلاقي 200 بالبيانات.
+  async function fetchLevelFromTracker(gameSlug, platform, trackerId, onIndexing) {
     const base = window.TRACKER_API_BASE;
     if (!base) {
       throw new Error('لسه ملف tracker-config.js مش متحمّل أو TRACKER_API_BASE فاضي');
     }
-    const res = await fetch(`${base}/getLevel`, {
+
+    const post = () => fetch(`${base}/getLevel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ game: gameSlug, platform, trackerId }),
-    });
-    const data = await res.json().catch(() => ({}));
+    }).then(async (res) => ({ res, data: await res.json().catch(() => ({})) }));
+
+    let { res, data } = await post();
+
+    // 202 / indexing:true → الحساب لسه بيتفهرَس — نبدأ الـ Polling
+    if (data && (data.indexing === true || res.status === 202)) {
+      if (onIndexing) onIndexing(true);
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        await new Promise(r => setTimeout(r, 5000)); // poll كل 5 ثواني
+        const next = await post();
+        res = next.res;
+        data = next.data;
+        if (!(data && (data.indexing === true || res.status === 202))) break;
+      }
+      if (onIndexing) onIndexing(false);
+    }
+
     if (!res.ok) {
       throw new Error(data.error || `فشل الاتصال بالسيرفر الوسيط (HTTP ${res.status})`);
     }
@@ -1635,7 +1655,16 @@
     const original = srcBtn ? srcBtn.textContent : null;
     if (srcBtn) { srcBtn.disabled = true; srcBtn.textContent = '⏳'; }
     try {
-      const data = await fetchLevelFromTracker(cfg.slug, cfg.slug === 'valorant' ? 'pc' : a.platform, a.trackerId);
+      const data = await fetchLevelFromTracker(
+        cfg.slug,
+        cfg.slug === 'valorant' ? 'pc' : a.platform,
+        a.trackerId,
+        (indexing) => {
+          // 202: الحساب الجديد لسه بيتفهرَس — نعرض رسالة انتظار أثناء الـ Polling
+          if (srcBtn) srcBtn.textContent = indexing ? '⏳ جاري ربط الحساب...' : '⏳';
+          if (indexing) toast('جاري ربط الحساب لأول مرة...', 'info');
+        }
+      );
       const before = a.level;
       if (data.level !== null && data.level !== undefined) {
         a.level = Math.max(0, Math.min(a.maxLevel || 100, Number(data.level)));
@@ -1926,7 +1955,16 @@
       const originalLabel = refreshBtn.textContent;
       refreshBtn.textContent = '⏳ جاري الجلب...';
       try {
-        const data = await fetchLevelFromTracker(cfg.slug, cfg.slug === 'valorant' ? 'pc' : platform, trackerId);
+        const data = await fetchLevelFromTracker(
+          cfg.slug,
+          cfg.slug === 'valorant' ? 'pc' : platform,
+          trackerId,
+          (indexing) => {
+            // 202: الحساب الجديد لسه بيتفهرَس — نعرض رسالة انتظار أثناء الـ Polling
+            refreshBtn.textContent = indexing ? '⏳ جاري ربط الحساب...' : originalLabel;
+            if (indexing) toast('جاري ربط الحساب لأول مرة...', 'info');
+          }
+        );
         if (data.level !== null && data.level !== undefined) {
           $('#a-level').value = data.level;
         }
