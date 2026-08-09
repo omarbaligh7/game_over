@@ -55,9 +55,23 @@ app.post("/getLevel", async (req, res) => {
     }
 
     if (!TRN_API_KEY || TRN_API_KEY === "YOUR_TRACKER_GG_API_KEY_HERE") {
-      return res.status(500).json({
-        error: "لسه محدّدتش TRN_API_KEY (في lib/config.js أو Environment Variables على Vercel)",
-      });
+      // مفيش مفتاح رسمي → ننزل مباشرة للـ scraping fallback
+      const result = await getProvider(game)(platform, trackerId, null);
+      if (result.source === "scrape") {
+        return res.json({
+          ok: true,
+          game,
+          platform,
+          trackerId,
+          level: result.level,
+          rank: result.rank,
+          mmr: result.mmr ?? null,
+          matches: result.matches ?? null,
+          rankDetails: result.rankDetails ?? null,
+          source: result.source ?? "official",
+          apiKeyError: result.apiKeyError ?? "TRN_API_KEY غير متحدد",
+        });
+      }
     }
 
     const provider = getProvider(game);
@@ -82,6 +96,10 @@ app.post("/getLevel", async (req, res) => {
       trackerId,
       level: result.level,
       rank: result.rank,
+      mmr: result.mmr ?? null,
+      matches: result.matches ?? null,
+      rankDetails: result.rankDetails ?? null,
+      source: result.source ?? "official",
     });
   } catch (err) {
     console.error("getLevel error:", err);

@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "express": "^4.19.2",
-    "cors": "^2.8.5"
+    "axios": "^1.7.2",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "curl-cffi": "^0.1.50",
+    "express": "^4.19.2"
   }
 }
