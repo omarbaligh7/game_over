@@ -20,7 +20,7 @@
 
 const express = require("express");
 const cors = require("cors");
-const { TRN_API_KEY } = require("../lib/config");
+const { getApiKey } = require("../lib/config");
 const { getProvider, supportedGames } = require("../lib/providers");
 
 const app = express();
@@ -54,9 +54,18 @@ app.post("/getLevel", async (req, res) => {
       return res.status(400).json({ error: "لازم تبعت: game, platform, trackerId" });
     }
 
-    if (!TRN_API_KEY || TRN_API_KEY === "YOUR_TRACKER_GG_API_KEY_HERE") {
-      // مفيش مفتاح رسمي → ننزل مباشرة للـ scraping fallback
-      const result = await getProvider(game)(platform, trackerId, null);
+    const provider = getProvider(game);
+    if (!provider) {
+      return res.status(400).json({
+        error: `اللعبة "${game}" مش مدعومة لسه. الألعاب المدعومة حالياً: ${supportedGames().join(", ")}`,
+      });
+    }
+
+    const apiKey = getApiKey(game);
+
+    // لو مفيش مفتاح رسمي للعبة → ننزل مباشرة للـ scraping fallback
+    if (!apiKey) {
+      const result = await provider(platform, trackerId, null);
       if (result.source === "scrape") {
         return res.json({
           ok: true,
@@ -69,19 +78,12 @@ app.post("/getLevel", async (req, res) => {
           matches: result.matches ?? null,
           rankDetails: result.rankDetails ?? null,
           source: result.source ?? "official",
-          apiKeyError: result.apiKeyError ?? "TRN_API_KEY غير متحدد",
+          apiKeyError: result.apiKeyError ?? "API Key غير متحدد للعبة",
         });
       }
     }
 
-    const provider = getProvider(game);
-    if (!provider) {
-      return res.status(400).json({
-        error: `اللعبة "${game}" مش مدعومة لسه. الألعاب المدعومة حالياً: ${supportedGames().join(", ")}`,
-      });
-    }
-
-    const result = await provider(platform, trackerId, TRN_API_KEY);
+    const result = await provider(platform, trackerId, apiKey);
 
     if (result.level === null && result.rank === null) {
       return res.status(404).json({
@@ -96,6 +98,9 @@ app.post("/getLevel", async (req, res) => {
       trackerId,
       level: result.level,
       rank: result.rank,
+      rankScore: result.rankScore ?? null,
+      arenaRank: result.arenaRank ?? null,
+      arenaRankScore: result.arenaRankScore ?? null,
       mmr: result.mmr ?? null,
       matches: result.matches ?? null,
       rankDetails: result.rankDetails ?? null,

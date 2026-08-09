@@ -9,6 +9,10 @@
 // 🔑 حط مفتاح الـ API بتاعك هنا (لو مش مستخدم Environment Variable):
 const TRN_API_KEY = process.env.TRN_API_KEY || "";
 
+// 🔑 مفتاح Apex Legends من apexlegendsstatus.com
+// (مختلف عن Tracker.gg — ده مصدر مستقل لـ Apex)
+const APEX_API_KEY = process.env.APEX_API_KEY || "5c2102130feeb58b159396a5e30f8ffa";
+
 // الدومينات المسموح لها تكلم البروكسي ده (CORS) — ملحوظة: البروكسي
 // في الواقع بيرد بـ Access-Control-Allow-Origin: * لكل الدومينات،
 // فالقائمة دي للمرجعية فقط وموجودة عشان لو حبيت تقفل على دومينات محددة.
@@ -18,7 +22,19 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5000", // مفيد وقت التجربة المحلية (firebase serve / live-server)
 ];
 
-module.exports = { TRN_API_KEY, ALLOWED_ORIGINS };
+// خريطة كل لعبة → الـ API Key الخاص بها
+// (كل مصدر ممكن يكون له مفتاح مختلف عن التاني)
+const GAME_API_KEYS = {
+  apex: APEX_API_KEY,
+  "rocket-league": TRN_API_KEY,
+};
+
+// ترجع الـ API Key بتاعة لعبة معينة (أو "" لو مفيش)
+function getApiKey(game) {
+  return GAME_API_KEYS[game] || "";
+}
+
+module.exports = { TRN_API_KEY, APEX_API_KEY, ALLOWED_ORIGINS, getApiKey };
 
 /* ⚠️ الطريقة الأأمن (موصى بيها) — استخدام Environment Variables في Vercel:
    1) من لوحة تحكم Vercel: Project → Settings → Environment Variables
