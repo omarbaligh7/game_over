@@ -239,12 +239,13 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
   // البروفايل، ثم ندخل /core/interface-v2 (اللي بيفعّل الفهرسة من EA).
   await requestProfilePage(apiPlatform, trackerId);
 
-  // ===== الخطوة 3: انتظار المعالجة + حلقة Retry — حتى 3 محاولات =====
-  // الموقع بياخد 5-10 ثواني عشان يخلص فهرسة الحساب الجديد — نستنى 3 ثواني
-  // قبل أول استعلام، و3 ثواني بين كل محاولة والتانية.
+  // ===== الخطوة 3: انتظار المعالجة + حلقة Retry — حتى 4 محاولات =====
+  // الموقع بياخد وقت عشان يخلص فهرسة الحساب الجديد من EA، والـ bridge نفسه
+  // بياخد 5-10 ثواني عشان يحدّث بياناته. بنستنى 5 ثواني قبل كل محاولة
+  // عشان ندي الفهرسة فرصة كاملة (إجمالي ~20 ثانية).
   let lastRes = firstRes;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await delay(3000);
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    await delay(5000);
 
     const retryRes = await fetchBridge(apiKey, apiPlatform, trackerId);
     lastRes = retryRes;
