@@ -73,7 +73,11 @@ async function httpGet(url, { headers, timeout = 15000 } = {}) {
         break;
       }
     }
-    if (lastErr) throw lastErr;
+    if (lastErr && (lastErr.statusCode === 403 || lastErr.statusCode === 429)) {
+      // كل قيم الـ impersonate اترفضت من Cloudflare — الـ axios هيرفض برضه
+      throw lastErr;
+    }
+    // أي فشل تاني (timeout/شبكة) → نكمل للـ axios كآخر محاولة
   }
 
   // ==== Fallback: axios (بنية Node العادية — غالباً هتترفض بـ 403 من Cloudflare،
