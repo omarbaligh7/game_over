@@ -1443,7 +1443,7 @@
             <div class="level-info">
               <span>المستوى <strong>${a.level}</strong> / ${a.maxLevel || 100}</span>
               <div class="level-controls">
-                ${getTrackerGameConfig(game) && a.platform && a.trackerId ? `<button class="lvl-btn" data-act="refresh-level" data-id="${esc(a.id)}" title="تحديث المستوى من Tracker.gg">🔄</button>` : ''}
+                ${(() => { const g = getTrackerGameConfig(game); return g && a.trackerId && (a.platform || g.slug === 'valorant') ? `<button class="lvl-btn" data-act="refresh-level" data-id="${esc(a.id)}" title="تحديث المستوى من Tracker.gg">🔄</button>` : ''; })()}
                 <button class="lvl-btn" data-act="lvl" data-id="${esc(a.id)}" data-delta="-1" title="إنزال مستوى">−</button>
                 <button class="lvl-btn" data-act="lvl" data-id="${esc(a.id)}" data-delta="1" title="رفع مستوى">+</button>
               </div>
@@ -1628,12 +1628,14 @@
     const game = STATE.games.find(g => g.id === a.gameId);
     const cfg = getTrackerGameConfig(game);
     if (!cfg) return toast('اللعبة دي مش مدعومة في التحديث التلقائي', 'err');
-    if (!a.platform || !a.trackerId) return toast('حدد المنصة ومعرف التتبع من التعديل الأول', 'err');
+    if (!a.trackerId) return toast('حدد معرف التتبع من التعديل الأول', 'err');
+    // VALORANT معندوش منصة — نجيب الليفل بالاسم#التاج بس
+    if (!a.platform && cfg.slug !== 'valorant') return toast('حدد المنصة ومعرف التتبع من التعديل الأول', 'err');
 
     const original = srcBtn ? srcBtn.textContent : null;
     if (srcBtn) { srcBtn.disabled = true; srcBtn.textContent = '⏳'; }
     try {
-      const data = await fetchLevelFromTracker(cfg.slug, a.platform, a.trackerId);
+      const data = await fetchLevelFromTracker(cfg.slug, cfg.slug === 'valorant' ? 'pc' : a.platform, a.trackerId);
       const before = a.level;
       if (data.level !== null && data.level !== undefined) {
         a.level = Math.max(0, Math.min(a.maxLevel || 100, Number(data.level)));
@@ -1883,12 +1885,25 @@
     // ---- Tracker.gg: تحديث تلقائي للمستوى من داخل النموذج ----
     const trackHint = $('#a-track-hint');
     const refreshBtn = $('#a-track-refresh');
+    const platformRow = $('#a-platform')?.closest('.field');
+    const trackerIdLabel = $('#a-trackerid-label');
     function updateTrackHint() {
       const game = STATE.games.find(g => g.id === $('#a-game').value);
       const cfg = getTrackerGameConfig(game);
+      const isValorant = cfg && cfg.slug === 'valorant';
+      // VALORANT معندوش منصة (Riot launcher) — نخفي حقل المنصة ونجيب الليفل بالاسم#التاج بس
+      if (platformRow) platformRow.style.display = isValorant ? 'none' : '';
+      if (trackerIdLabel) {
+        trackerIdLabel.innerHTML = isValorant
+          ? '🔎 الاسم والتاج (Riot ID) <span class="opt-tag">(مثال: TenZ#SEN)</span>'
+          : '🔎 معرف التتبع (EA Name / Riot ID / Gamertag) <span class="opt-tag">(اختياري)</span>';
+      }
       if (!cfg) {
         trackHint.textContent = `⚠️ التحديث التلقائي متاح حالياً لـ ${Object.values(TRACKER_GAMES).map(g => g.label).join(', ')} فقط`;
         refreshBtn.disabled = true;
+      } else if (isValorant) {
+        trackHint.textContent = '✓ VALORANT — اكتب الاسم والتاج بالصيغة Name#Tag (مثال: TenZ#SEN) ثم دوس الزر (مفيش منصة مطلوبة)';
+        refreshBtn.disabled = false;
       } else {
         trackHint.textContent = `✓ التحديث التلقائي متاح لـ ${cfg.label} — اختار المنصة واكتب معرف التتبع بعدين دوس الزر`;
         refreshBtn.disabled = false;
@@ -1903,14 +1918,15 @@
       const platform = $('#a-platform').value;
       const trackerId = $('#a-trackerid').value.trim();
       if (!cfg) return toast('اللعبة دي مش مدعومة في التحديث التلقائي لسه', 'err');
-      if (!platform) return toast('اختر المنصة (Platform) الأول', 'err');
+      // VALORANT مش محتاج منصة — نجيب الليفل بالاسم#التاج مباشرة (platform "pc" رمزياً)
+      if (!platform && cfg.slug !== 'valorant') return toast('اختر المنصة (Platform) الأول', 'err');
       if (!trackerId) return toast('اكتب معرف التتبع (Tracker Identifier)', 'err');
 
       refreshBtn.disabled = true;
       const originalLabel = refreshBtn.textContent;
       refreshBtn.textContent = '⏳ جاري الجلب...';
       try {
-        const data = await fetchLevelFromTracker(cfg.slug, platform, trackerId);
+        const data = await fetchLevelFromTracker(cfg.slug, cfg.slug === 'valorant' ? 'pc' : platform, trackerId);
         if (data.level !== null && data.level !== undefined) {
           $('#a-level').value = data.level;
         }
