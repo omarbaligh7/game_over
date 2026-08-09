@@ -325,9 +325,11 @@
   // بـ Tracker.gg وترجع { level, rank }. مفيش أي اتصال مباشر من هنا
   // لـ Tracker.gg نهائياً (عشان مشكلة CORS + حماية الـ API Key).
   //
-  // Two-Step Async: لما السيرفر الوسيط يرجع 202 (indexing:true) معناها
-  // إن الحساب الجديد لسه بيتفهرَس لأول مرة — بنعمل Polling من المتصفح
-  // (إعادة الطلب كل 5 ثواني، بحد أقصى 4 محاولات) لحد ما نلاقي 200 بالبيانات.
+  // Two-Step Async + Polling:
+  // لو السيرفر رجع 202 أو { indexing: true } أو مستوى فارغ (null/undefined)
+  // = الحساب الجديد لسه بيتفهرَس لأول مرة. ممنوع تحديث الخانة بقيمة فارغة!
+  // بنعرض حالة انتظار (onIndexing) وبعدين بنعيد طلب نفس الـ Endpoint كل
+  // 5 ثواني (بحد أقصى 4 محاولات) لحد ما يرجع 200 ومعاه level حقيقي (رقم).
   async function fetchLevelFromTracker(gameSlug, platform, trackerId, onIndexing) {
     const base = window.TRACKER_API_BASE;
     if (!base) {
@@ -340,23 +342,43 @@
       body: JSON.stringify({ game: gameSlug, platform, trackerId }),
     }).then(async (res) => ({ res, data: await res.json().catch(() => ({})) }));
 
+    // بتقول إذا كانت الاستجابة لسه "بتفهرس" ولا فيها مستوى حقيقي
+    const stillIndexing = (res, data) =>
+      res.status === 202 ||
+      (data && (data.indexing === true || data.level == null));
+
+    const isRealLevel = (data) => {
+      if (!data || data.level === null || data.level === undefined) return false;
+      const n = Number(data.level);
+      return !Number.isNaN(n) && typeof n === 'number';
+    };
+
     let { res, data } = await post();
 
-    // 202 / indexing:true → الحساب لسه بيتفهرَس — نبدأ الـ Polling
-    if (data && (data.indexing === true || res.status === 202)) {
+    // الاستجابة الأولى لسه بتفهرس أو فاضية من المستوى → نبدأ الـ Polling
+    if (stillIndexing(res, data)) {
       if (onIndexing) onIndexing(true);
+
       for (let attempt = 1; attempt <= 4; attempt++) {
         await new Promise(r => setTimeout(r, 5000)); // poll كل 5 ثواني
         const next = await post();
         res = next.res;
         data = next.data;
-        if (!(data && (data.indexing === true || res.status === 202))) break;
+
+        // 1) خطأ صريح من السيرفر (4xx/5xx) → نوقف فوراً ونرمي
+        if (res.status >= 400 && !stillIndexing(res, data)) {
+          throw new Error(data.error || `فشل الاتصال بالسيرفر الوسيط (HTTP ${res.status})`);
+        }
+
+        // 2) وصلنا 200 مع مستوى حقيقي (رقم) → نوقف الـ Polling فوراً ونرجع
+        if (res.status === 200 && isRealLevel(data)) break;
       }
+
       if (onIndexing) onIndexing(false);
 
-      // لسه بيتفهرَس بعد كل المحاولات → خطأ واضح
-      if (data && (data.indexing === true || res.status === 202)) {
-        throw new Error('استغرق ربط الحساب وقتاً أطول من المتوقع — حاول مرة أخرى بعد قليل');
+      // خلصنا المحاولات ولسه بنفهرس → خطأ واضح (من غير تحديث أي خانة)
+      if (stillIndexing(res, data) || !isRealLevel(data)) {
+        throw new Error('الحساب يحتاج وقتاً أطول للتسجيل، يرجى المحاولة بعد قليل');
       }
     }
 
@@ -1970,13 +1992,14 @@
             if (indexing) toast('جاري ربط الحساب لأول مرة...', 'info');
           }
         );
+        // مستوى حقيقي (رقم) فقط → نحدّث الخانة ونعرض النتيجة
         if (data.level !== null && data.level !== undefined) {
           $('#a-level').value = data.level;
         }
         if (data.rank) {
           $('#a-rank').value = data.rank;
         }
-        toast(`تم الجلب: المستوى ${data.level ?? '—'}${data.rank ? ' — ' + data.rank : ''}`, 'ok');
+        toast(`تم الجلب: المستوى ${data.level}${data.rank ? ' — ' + data.rank : ''}`, 'ok');
         playSound('success');
       } catch (err) {
         console.warn('Tracker.gg fetch error:', err);
