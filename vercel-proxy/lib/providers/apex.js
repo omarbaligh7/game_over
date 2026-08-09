@@ -117,19 +117,39 @@ async function getSessionCookies() {
 async function requestProfilePage(apiPlatform, trackerId) {
   try {
     const cookies = await getSessionCookies();
-    const headers = {
+    const baseHeaders = {
       ...BROWSER_HEADERS,
       ...(cookies ? { Cookie: cookies } : {}),
-      Referer: `${SITE_URL}/`,
     };
-    const url = `${SITE_URL}/profile/${encodeURIComponent(apiPlatform)}/${encodeURIComponent(trackerId)}`;
-    await axios.get(url, {
-      timeout: 30000,
-      maxRedirects: 5,
-      headers,
-    });
+
+    // 1) نفتح صفحة البروفايل الأول (بيرجع قالب "Loading profile...")
+    await axios.get(
+      `${SITE_URL}/profile/${encodeURIComponent(apiPlatform)}/${encodeURIComponent(trackerId)}`,
+      {
+        timeout: 30000,
+        maxRedirects: 5,
+        headers: { ...baseHeaders, Referer: `${SITE_URL}/` },
+      }
+    );
+
+    // 2) ندخل `/core/interface-v2` بنفس طريقة المتصفح — ده الـ request الحقيقي
+    //    اللي بيفعّل الفهرسة وبيجيب البيانات (الـ profile_v2.js بيعمله تلقائياً).
+    //    من غيره الفهرسة مش بتكتمل. بياخد 5-10 ثواني للحسابات الجديدة.
+    await axios.get(
+      `${SITE_URL}/core/interface-v2?token=${encodeURIComponent("CSRF_PRE_PROD")}&platform=${encodeURIComponent(apiPlatform)}&player=${encodeURIComponent(trackerId)}`,
+      {
+        timeout: 60000,
+        maxRedirects: 5,
+        headers: {
+          ...baseHeaders,
+          Referer: `${SITE_URL}/profile/${encodeURIComponent(apiPlatform)}/${encodeURIComponent(trackerId)}`,
+          "X-Requested-With": "XMLHttpRequest",
+          Accept: "application/json, text/javascript, */*; q=0.01",
+        },
+      }
+    );
   } catch (err) {
-    // لو فشل زيارة الصفحة (مثلاً رجع 403/CF) بنكمّل على الـ retry loop —
+    // لو فشل أي خطوة (مثلاً 403/CF) بنكمّل على الـ retry loop —
     // الفهرسة ممكن تكون اشتغلت أو لأ، ومش هنقف عشان ده.
   }
 }
@@ -210,41 +230,41 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
     return firstParsed;
   }
 
-  // اللاعب مش موجود أصلاً في اللعبة (404) → خطأ نهائي من غير داعي للـ force
-  if (firstRes.status === 404 && !firstParsed) {
-    const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
-    err.statusCode = 404;
-    throw err;
-  }
+  // ملاحظة: الـ bridge بيرجع 404 حتى للاعبين الموجودين في اللعبة لكن لسه
+  // مش مسجلين في قاعدة بيانات الموقع (الـ body بيدّي 404 فارغ). فمينفعش
+  // نستنتج "اللاعب غير موجود" من 404 قبل ما نجرب الفهرسة.
 
-  // ===== الخطوة 2: الحساب جديد/غير مسجل → محاكاة زيارة صفحة البروفايل =====
-  // نبعث GET لصفحة البروفايل على الموقع الأساسي بهوية متصفح حقيقي عشان
-  // نجبر سيرفرات ALS على ربط وفهرسة الحساب من سيرفرات EA لأول مرة.
+  // ===== الخطوة 2: الحساب جديد/غير مسجل → محاكاة زيارة المتصفح =====
+  // بنعمل نفس اللي بيعمله المتصفح: نفتح الرئيسية ناخد كوكيز، نفتح صفحة
+  // البروفايل، ثم ندخل /core/interface-v2 (اللي بيفعّل الفهرسة من EA).
   await requestProfilePage(apiPlatform, trackerId);
 
   // ===== الخطوة 3: انتظار المعالجة + حلقة Retry — حتى 3 محاولات =====
-  // الموقع بياخد وقت عشان يخلص فهرسة الحساب (ربط EA) — نستنى 3 ثواني
+  // الموقع بياخد 5-10 ثواني عشان يخلص فهرسة الحساب الجديد — نستنى 3 ثواني
   // قبل أول استعلام، و3 ثواني بين كل محاولة والتانية.
+  let lastRes = firstRes;
   for (let attempt = 1; attempt <= 3; attempt++) {
     await delay(3000);
 
     const retryRes = await fetchBridge(apiKey, apiPlatform, trackerId);
+    lastRes = retryRes;
     const retryParsed = retryRes.ok ? parseBridgeData(retryRes.data) : null;
 
     if (hasProfile(retryParsed)) {
       retryParsed.source = "official";
       return retryParsed;
     }
-
-    // لو رجع 404 → اللاعب مش موجود أصلاً (مش "لسه بيتفهرَس") → خطأ نهائي
-    if (retryRes.status === 404) {
-      const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
-      err.statusCode = 404;
-      throw err;
-    }
   }
 
   // ===== الخطوة 4: خلصنا كل المحاولات ولسه الحساب مفيش =====
+  // - لو bridge لسه راجع 404 → اللاعب غير موجود في اللعبة أصلاً.
+  // - لو bridge راجع 200 لكن بلا بيانات global → لسه بيتفهرَس → 202.
+  if (lastRes.status === 404) {
+    const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
+    err.statusCode = 404;
+    throw err;
+  }
+
   // الحساب لسه بيتفهرَس لأول مرة — الـ Route بيحوّل الرمز ده لاستجابة 202.
   const indexingErr = new Error(
     "Player is being indexed for the first time. Please try searching again in 10 seconds."
