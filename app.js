@@ -353,6 +353,11 @@
         if (!(data && (data.indexing === true || res.status === 202))) break;
       }
       if (onIndexing) onIndexing(false);
+
+      // لسه بيتفهرَس بعد كل المحاولات → خطأ واضح
+      if (data && (data.indexing === true || res.status === 202)) {
+        throw new Error('استغرق ربط الحساب وقتاً أطول من المتوقع — حاول مرة أخرى بعد قليل');
+      }
     }
 
     if (!res.ok) {
