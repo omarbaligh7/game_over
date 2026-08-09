@@ -7,12 +7,15 @@
    آلية التعامل مع الحسابات الجديدة (غير المسجلة في قاعدة البيانات):
      1) نبعث طلب الاستعلام العادي الأول.
      2) لو نجح ورجعت بيانات global → نرجّع النتيجة فوراً.
-     3) لو الحساب غير موجود أو رجع "Player not found" / Error:
-        - نبعث طلب Force Refresh (force=true) عشان السيرفر يربط الحساب
-          ويسجّله في قاعدة البيانات لأول مرة.
+     3) لو الحساب غير موجود أو رجع "Player not found" / Missing Global Data:
+        - نبعث طلب HTTP GET محاكي لمتصفح حقيقي لصفحة البروفايل على الموقع
+          الأساسي:
+            https://apexlegendsstatus.com/profile/{platform}/{player_name}
+          مع هيدر User-Agent (Chrome) — لأن سيرفر ALS يرفض فهرسة الحسابات
+          الجديدة عبر force=true للطلبات المجانية ويشترط زيارة واجهة الموقع
+          الأساسية لتفعيل الفهرسة من سيرفرات EA.
+        - نستنى 3 ثواني حتى يخلص الموقع معالجة وفهرسة الحساب.
         - نعمل حلقة تكرارية حتى 3 محاولات (Max 3 retries):
-            * نستنى 4 ثواني (await delay(4000)) — كافية لأن سيرفرات
-              EA/ALS تخلص ربط الحساب الجديد (5-8 ثواني).
             * نعيد طلب الـ Bridge العادي.
             * لو نجح ورجعت بيانات الحساب → نخرج من الحلقة فوراً.
      4) لو خلصت كل المحاولات ولسه الحساب مفيش → الـ Route يرجّع
@@ -31,6 +34,12 @@
 const axios = require("axios");
 
 const BASE_URL = "https://api.apexlegendsstatus.com/bridge";
+const SITE_URL = "https://apexlegendsstatus.com";
+
+// هيدر يحاكي متصفح Chrome حقيقي — الموقع يرفض/يتجاهل الفهرسة من الطلبات
+// غير المصحوبة بهوية متصفح، والـ API force=true لا يعمل للطلبات المجانية.
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 // دالة مساعدة للانتظار (async delay)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,6 +75,26 @@ async function fetchBridge(apiKey, apiPlatform, trackerId, force = false) {
     const status = err.response?.status;
     const body = err.response?.data ? JSON.stringify(err.response.data).slice(0, 300) : "";
     return { ok: false, error: `HTTP ${status}: ${body}`.trim(), status };
+  }
+}
+
+// ============================================
+// محاكاة زيارة صفحة البروفايل على الموقع الأساسي
+// ============================================
+// سيرفر ALS يرفض فهرسة الحسابات الجديدة عبر API force=true للطلبات المجانية
+// ويشترط زيارة صفحة البروفايل من واجهة الموقع (بعرض متصفح) ليفهرس الحساب
+// من سيرفرات EA. نبعث هنا GET بنفس طريقة المتصفح عشان نفعّل الفهرسة.
+async function requestProfilePage(apiPlatform, trackerId) {
+  const url = `${SITE_URL}/profile/${encodeURIComponent(apiPlatform)}/${encodeURIComponent(trackerId)}`;
+  try {
+    await axios.get(url, {
+      timeout: 30000,
+      maxRedirects: 5,
+      headers: { "User-Agent": BROWSER_UA },
+    });
+  } catch (err) {
+    // لو فشل زيارة الصفحة (مثلاً رجع 403/CF) بنكمّل على الـ retry loop —
+    // الفهرسة ممكن تكون اشتغلت أو لأ، ومش هنقف عشان ده.
   }
 }
 
@@ -152,22 +181,16 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
     throw err;
   }
 
-  // ===== الخطوة 2: الحساب جديد/غير مسجل → Force Refresh =====
-  // بنبعث force=true عشان السيرفر يربط الحساب مع سيرفرات EA ويسجّله لأول مرة.
-  const forceRes = await fetchBridge(apiKey, apiPlatform, trackerId, true);
+  // ===== الخطوة 2: الحساب جديد/غير مسجل → محاكاة زيارة صفحة البروفايل =====
+  // نبعث GET لصفحة البروفايل على الموقع الأساسي بهوية متصفح حقيقي عشان
+  // نجبر سيرفرات ALS على ربط وفهرسة الحساب من سيرفرات EA لأول مرة.
+  await requestProfilePage(apiPlatform, trackerId);
 
-  // لو الـ force رجع 404 → اللاعب مش موجود في اللعبة أصلاً، مفيش داعي نكمل
-  if (forceRes.status === 404) {
-    const err = new Error("اللاعب ده مش موجود على Apex Legends — تأكد من اسم اللاعب والمنصة");
-    err.statusCode = 404;
-    throw err;
-  }
-
-  // ===== الخطوة 3: حلقة Retry — حتى 3 محاولات × 4 ثواني =====
-  // الـ force بياخد 5-8 ثواني عند سيرفرات EA/ALS عشان يخلص ربط الحساب،
-  // فلازم نستنى وقت كافي قبل كل retry.
+  // ===== الخطوة 3: انتظار المعالجة + حلقة Retry — حتى 3 محاولات =====
+  // الموقع بياخد وقت عشان يخلص فهرسة الحساب (ربط EA) — نستنى 3 ثواني
+  // قبل أول استعلام، و3 ثواني بين كل محاولة والتانية.
   for (let attempt = 1; attempt <= 3; attempt++) {
-    await delay(4000);
+    await delay(3000);
 
     const retryRes = await fetchBridge(apiKey, apiPlatform, trackerId);
     const retryParsed = retryRes.ok ? parseBridgeData(retryRes.data) : null;
@@ -195,4 +218,4 @@ async function fetchApexProfile(platform, trackerId, apiKey) {
   throw indexingErr;
 }
 
-module.exports = { fetchApexProfile, parseBridgeData, delay, INDEXING };
+module.exports = { fetchApexProfile, parseBridgeData, requestProfilePage, delay, INDEXING };
