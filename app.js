@@ -2688,84 +2688,62 @@ Summoner Name: `;
     wrap.addEventListener('pointerleave', onLeave);
   }
 
-  // Dock magnifier — vanilla reimplementation of the Aceternity FloatingDock
-  // hover effect. The spring (mass: 0.1, stiffness: 150, damping: 12) drives a
-  // transform scale (1 → 1.5) so NO layout reflow happens: icons pop up without
-  // resizing the dock or the sticky header, keeping the page rock-stable.
+  // Dock magnifier — a bulletproof, layout-independent hover wave for the nav.
+  // Button centers are measured once (transform never affects layout), and each
+  // scale is eased with frame-rate-independent exponential smoothing, which is
+  // monotonic and mathematically incapable of oscillating, glitching or
+  // touching any backdrop-filter compositing.
   function initDockMagnifier() {
     const nav = $('.nav');
     if (!nav) return;
-    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const btns = Array.from(nav.querySelectorAll('.nav-btn'));
-    const MAX = 160;
-    const SP = { mass: 0.1, stiffness: 150, damping: 12 };
-    const DT = 1 / 60;
-    const MIN_S = 1, MAX_S = 1.5;
-
+    const MAX = 150;
+    const MIN_S = 1, MAX_S = 1.35;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    const apply = (i, s) => {
-      btns[i].style.transform = `scale(${s.toFixed(3)})`;
+
+    // Cached horizontal centers — static, since scale never changes layout
+    let centers = [];
+    const measure = () => {
+      centers = btns.map(b => {
+        const r = b.getBoundingClientRect();
+        return r.left + r.width / 2;
+      });
     };
+    measure();
+    window.addEventListener('resize', measure);
 
-    if (reduced) {
-      // Reduced motion: snap instantly, no spring animation
-      const onMoveSnap = e => {
-        btns.forEach((btn, i) => {
-          const r = btn.getBoundingClientRect();
-          const cx = r.left + r.width / 2;
-          const t = clamp(1 - Math.abs(e.clientX - cx) / MAX, 0, 1);
-          apply(i, MIN_S + t * (MAX_S - MIN_S));
-        });
-      };
-      const onLeaveSnap = () => btns.forEach((b, i) => apply(i, MIN_S));
-      nav.addEventListener('mousemove', onMoveSnap);
-      nav.addEventListener('mouseleave', onLeaveSnap);
-      return;
-    }
-
-    // Each button holds one spring for its scale factor
-    const springs = btns.map(() => ({ scale: { s: MIN_S, v: 0 } }));
-
-    // Integrate one spring: damped harmonic oscillator a = (k*target - c*v)/m,
-    // using 4 substeps per frame so the stiff spring stays numerically stable
-    // (no visual ringing/jitter) with the exact motion spring constants.
-    const SUB = 4;
-    const integrate = (sp, target) => {
-      let settled = true;
-      for (let k = 0; k < SUB; k++) {
-        const h = DT / SUB;
-        const acc = (SP.stiffness * (target - sp.s) - SP.damping * sp.v) / SP.mass;
-        sp.v += acc * h;
-        sp.s = clamp(sp.s + sp.v * h, MIN_S, MAX_S);
-        if (Math.abs(target - sp.s) >= 0.001 || Math.abs(sp.v) >= 0.001) settled = false;
-      }
-      return settled;
-    };
+    const scales = btns.map(() => MIN_S);
+    const applyAll = () => btns.forEach((b, i) => {
+      b.style.transform = `scale(${scales[i].toFixed(3)})`;
+    });
 
     let raf = null;
+    let lastT = 0;
     let mouseX = -Infinity;
     let over = false;
 
-    const frame = () => {
+    const frame = t => {
       raf = null;
-      try {
-        let settling = true;
-        btns.forEach((btn, i) => {
-          const r = btn.getBoundingClientRect();
-          const cx = r.left + r.width / 2;
-          const dist = Math.abs(mouseX - cx);
-          const t = over ? clamp(1 - dist / MAX, 0, 1) : 0;
-          settling = integrate(springs[i].scale, MIN_S + t * (MAX_S - MIN_S)) && settling;
-          apply(i, springs[i].scale.s);
-        });
-        if (!settling) raf = requestAnimationFrame(frame);
-      } catch (err) {
-        // Fail-safe: never let the dock magnifier break the page
-        btns.forEach((b, i) => apply(i, MIN_S));
+      if (!lastT) lastT = t;
+      const dt = clamp((t - lastT) / 1000, 0, 0.05);
+      lastT = t;
+      const k = 1 - Math.exp(-dt * 14); // exponential smoothing factor (0..1)
+      let done = true;
+      for (let i = 0; i < btns.length; i++) {
+        const dist = Math.abs(mouseX - centers[i]);
+        const target = over && dist < MAX
+          ? MIN_S + (1 - dist / MAX) * (MAX_S - MIN_S)
+          : MIN_S;
+        const next = scales[i] + (target - scales[i]) * k;
+        scales[i] = clamp(next, MIN_S, MAX_S);
+        if (Math.abs(target - scales[i]) > 0.002) done = false;
       }
+      applyAll();
+      if (!done) raf = requestAnimationFrame(frame);
     };
 
-    const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+    const kick = () => { if (!raf) { lastT = 0; raf = requestAnimationFrame(frame); } };
 
     nav.addEventListener('mousemove', e => { mouseX = e.clientX; kick(); });
     nav.addEventListener('mouseenter', () => { over = true; kick(); });

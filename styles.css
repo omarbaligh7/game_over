@@ -507,9 +507,7 @@ input, select, textarea { font-family: inherit; color: inherit; }
   align-items: center;
   justify-content: space-between;
   padding: 1rem 2rem;
-  background: rgba(12, 10, 30, 0.72);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(12, 10, 30, 0.96);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -2193,14 +2191,12 @@ button.status-clickable:hover .status-arrow {
   align-items: flex-end;
   gap: 8px;
   padding: 10px 14px 12px;
-  background: rgba(21, 18, 43, 0.75);
+  background: rgba(23, 19, 48, 0.96);
   border: 1px solid var(--border-2);
   border-radius: 30px;
   box-shadow:
     0 10px 34px rgba(0, 0, 0, 0.45),
     0 0 0 1px rgba(168, 85, 247, 0.06) inset;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   position: relative;
   z-index: 50;
   overflow: visible;
@@ -2237,7 +2233,6 @@ button.status-clickable:hover .status-arrow {
   justify-content: center;
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
-  will-change: transform;
   transform-origin: center bottom;
 }
 .nav-icon {
