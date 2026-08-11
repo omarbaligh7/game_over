@@ -38,11 +38,30 @@
 
   <!-- ============== AUTH GATE ============== -->
   <div id="auth" class="auth hidden">
-    <div class="auth-shell">
+    <div class="auth-bg" aria-hidden="true"></div>
+    <div class="auth-noise" aria-hidden="true"></div>
+    <div class="auth-orb auth-orb-top" aria-hidden="true"></div>
+    <div class="auth-orb auth-orb-bottom" aria-hidden="true"></div>
+    <div class="auth-spot auth-spot-1" aria-hidden="true"></div>
+    <div class="auth-spot auth-spot-2" aria-hidden="true"></div>
+
+    <div class="auth-tilt" id="auth-tilt">
+      <div class="auth-card">
+        <div class="auth-glow" aria-hidden="true"></div>
+        <span class="beam beam-t" aria-hidden="true"></span>
+        <span class="beam beam-r" aria-hidden="true"></span>
+        <span class="beam beam-b" aria-hidden="true"></span>
+        <span class="beam beam-l" aria-hidden="true"></span>
+        <span class="corner c-tl" aria-hidden="true"></span>
+        <span class="corner c-tr" aria-hidden="true"></span>
+        <span class="corner c-br" aria-hidden="true"></span>
+        <span class="corner c-bl" aria-hidden="true"></span>
+
+        <div class="auth-shell">
       <!-- ============== LOGIN FORM ============== -->
       <form id="form-login" class="auth-form active" autocomplete="on">
         <div class="auth-head">
-          <div class="auth-logo"><span class="auth-dot">G</span>AME<span class="auth-dot">_</span>OVER</div>
+          <div class="auth-badge" aria-hidden="true"><b>G</b></div>
           <h1 class="auth-title">أهلاً بعودتك</h1>
           <p class="auth-sub">سجّل دخولك للمتابعة إلى لوحة التحكم</p>
         </div>
@@ -69,22 +88,25 @@
             <input type="checkbox" id="login-remember" />
             <span>تذكرني على هذا الجهاز</span>
           </label>
+          <button type="button" class="link-btn link-faint" data-switch="forgot">نسيت كلمة المرور؟</button>
         </div>
 
-        <button type="submit" class="auth-btn">تسجيل الدخول</button>
+        <button type="submit" class="auth-btn">
+          <span class="auth-btn-label">تسجيل الدخول</span>
+          <span class="auth-btn-spinner" aria-hidden="true"></span>
+        </button>
         <div class="form-err" id="login-err"></div>
 
         <div class="auth-footer">
-          <button type="button" class="link-btn" data-switch="signup">إنشاء حساب جديد</button>
-          <span class="dot-sep">·</span>
-          <button type="button" class="link-btn" data-switch="forgot">نسيت كلمة المرور</button>
+          <span class="foot-text">ليس لديك حساب؟</span>
+          <button type="button" class="link-btn link-underline" data-switch="signup">إنشاء حساب جديد</button>
         </div>
       </form>
 
       <!-- ============== SIGNUP FORM ============== -->
       <form id="form-signup" class="auth-form" autocomplete="on">
         <div class="auth-head">
-          <div class="auth-logo small"><span class="auth-dot">G</span>AME<span class="auth-dot">_</span>OVER</div>
+          <div class="auth-badge" aria-hidden="true"><b>G</b></div>
           <h1 class="auth-title">إنشاء حساب جديد</h1>
           <p class="auth-sub">كل حساب له مساحة بيانات منفصلة تماماً</p>
         </div>
@@ -129,7 +151,10 @@
           <div class="pw-label">قوة كلمة المرور</div>
         </div>
 
-        <button type="submit" class="auth-btn">إنشاء الحساب</button>
+        <button type="submit" class="auth-btn">
+          <span class="auth-btn-label">إنشاء الحساب</span>
+          <span class="auth-btn-spinner" aria-hidden="true"></span>
+        </button>
         <div class="form-err" id="signup-err"></div>
 
         <div class="auth-footer">
@@ -140,7 +165,7 @@
       <!-- ============== FORGOT PASSWORD — via Firebase email reset link ============== -->
       <form id="form-forgot" class="auth-form" autocomplete="off">
         <div class="auth-head">
-          <div class="auth-logo small"><span class="auth-dot">G</span>AME<span class="auth-dot">_</span>OVER</div>
+          <div class="auth-badge" aria-hidden="true"><b>G</b></div>
           <h1 class="auth-title">استرجاع كلمة المرور</h1>
           <p class="auth-sub">هنبعتلك رابط إعادة تعيين كلمة المرور على بريدك الإلكتروني</p>
         </div>
@@ -153,13 +178,18 @@
           </div>
         </div>
 
-        <button type="submit" class="auth-btn" id="forgot-next">إرسال رابط الاسترجاع</button>
+        <button type="submit" class="auth-btn" id="forgot-next">
+          <span class="auth-btn-label">إرسال رابط الاسترجاع</span>
+          <span class="auth-btn-spinner" aria-hidden="true"></span>
+        </button>
         <div class="form-err" id="forgot-err"></div>
 
         <div class="auth-footer">
           <button type="button" class="link-btn" data-switch="login">العودة لتسجيل الدخول</button>
         </div>
       </form>
+        </div>
+      </div>
     </div>
   </div>
 

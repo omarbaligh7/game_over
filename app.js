@@ -692,6 +692,8 @@
     const auth = cloudAuth();
     if (!auth) { err.textContent = 'تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت'; return; }
 
+    const btn = $('#form-signup .auth-btn');
+    btn.classList.add('loading');
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, pass);
       await cred.user.updateProfile({ displayName: display });
@@ -708,6 +710,8 @@
       toast('تم إنشاء الحساب بنجاح ✓', 'ok');
     } catch (e2) {
       err.textContent = authErrorMessage(e2);
+    } finally {
+      btn.classList.remove('loading');
     }
   }
 
@@ -726,6 +730,8 @@
     const auth = cloudAuth();
     if (!auth) { err.textContent = 'تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت'; return; }
 
+    const btn = $('#form-login .auth-btn');
+    btn.classList.add('loading');
     try {
       // "تذكرني" يتحكم في مدة الجلسة: LOCAL تبقى بعد إغلاق المتصفح،
       // SESSION تنتهي بمجرد إغلاق التبويب. Firebase نفسه يدير التوكن،
@@ -743,6 +749,8 @@
       err.textContent = authErrorMessage(e2);
       $('#login-pass').value = '';
       $('#login-pass').focus();
+    } finally {
+      btn.classList.remove('loading');
     }
   }
 
@@ -778,6 +786,8 @@
     const auth = cloudAuth();
     if (!auth) { err.textContent = 'تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت'; return; }
 
+    const btn = $('#form-forgot .auth-btn');
+    btn.classList.add('loading');
     try {
       await auth.sendPasswordResetEmail(email);
       toast('تم إرسال رابط استرجاع كلمة المرور إلى بريدك ✓', 'ok');
@@ -793,6 +803,8 @@
         $('#forgot-user').value = '';
         showForm('login');
       }
+    } finally {
+      btn.classList.remove('loading');
     }
   }
 
@@ -2628,21 +2640,52 @@ Summoner Name: `;
   }
 
   // ============= PASSWORD TOGGLE =============
+  const EYE_SVG = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
   function bindPwToggles() {
     $$('.toggle-pw').forEach(btn => {
+      btn.innerHTML = EYE_SVG;
       btn.addEventListener('click', () => {
         const id = btn.dataset.target;
         const input = document.getElementById(id);
         if (!input) return;
         if (input.type === 'password') {
           input.type = 'text';
-          btn.textContent = '🙈';
+          btn.innerHTML = EYE_OFF_SVG;
         } else {
           input.type = 'password';
-          btn.textContent = '👁';
+          btn.innerHTML = EYE_SVG;
         }
       });
     });
+  }
+
+  // 3D tilt on the auth card that follows the mouse (sign-in-card-2)
+  function bindAuthTilt() {
+    const wrap = $('#auth-tilt');
+    if (!wrap) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    let raf = null;
+    const onMove = e => {
+      const r = wrap.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
+      const rx = (0.5 - py) * 8;
+      const ry = (px - 0.5) * 10;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        wrap.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+      });
+    };
+    const onLeave = () => {
+      if (raf) cancelAnimationFrame(raf);
+      wrap.style.transform = '';
+    };
+    wrap.addEventListener('pointermove', onMove);
+    wrap.addEventListener('pointerleave', onLeave);
   }
 
   // ============= INIT =============
@@ -2663,6 +2706,7 @@ Summoner Name: `;
     // Password strength + toggle
     $('#signup-pass').addEventListener('input', updatePwStrength);
     bindPwToggles();
+    bindAuthTilt();
 
     // Logout
     $('#logout').addEventListener('click', logout);
