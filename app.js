@@ -2688,41 +2688,85 @@ Summoner Name: `;
     wrap.addEventListener('pointerleave', onLeave);
   }
 
-  // Dock magnifier — the nav icon grows as the cursor gets near it
-  // (vanilla reimplementation of the FloatingDock hover effect)
+  // Dock magnifier — vanilla reimplementation of the Aceternity FloatingDock
+  // hover effect, using the exact same spring physics as motion's useSpring
+  // (mass: 0.1, stiffness: 150, damping: 12) via a damped-oscillator rAF loop.
   function initDockMagnifier() {
     const nav = $('.nav');
     if (!nav) return;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const btns = Array.from(nav.querySelectorAll('.nav-btn'));
+    const MAX = 160;
+    const SP = { mass: 0.1, stiffness: 150, damping: 12 };
+    const DT = 1 / 60;
 
-    let raf = null;
-    const onMove = e => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = null;
-        const mx = e.clientX;
+    if (reduced) {
+      // Reduced motion: snap instantly, no spring animation
+      const onMoveSnap = e => {
         btns.forEach(btn => {
           const r = btn.getBoundingClientRect();
           const cx = r.left + r.width / 2;
-          const dist = Math.abs(mx - cx);
-          const max = 160;
-          if (dist < max) {
-            const t = 1 - dist / max;
-            const scale = 1 + t * 0.45;
-            const dy = -t * 6;
-            btn.style.transform = `translateY(${dy}px) scale(${scale})`;
-          } else {
-            btn.style.transform = '';
-          }
+          const dist = Math.abs(e.clientX - cx);
+          const t = dist < MAX ? 1 - dist / MAX : 0;
+          btn.style.transform = `translateY(${(-t * 6).toFixed(1)}px) scale(${(1 + t * 0.45).toFixed(2)})`;
         });
+      };
+      const onLeaveSnap = () => btns.forEach(btn => (btn.style.transform = ''));
+      nav.addEventListener('mousemove', onMoveSnap);
+      nav.addEventListener('mouseleave', onLeaveSnap);
+      return;
+    }
+
+    // Each button holds two springs: scale and lift (translateY)
+    const springs = btns.map(() => ({
+      scale: { s: 1, v: 0 },
+      lift: { s: 0, v: 0 },
+    }));
+
+    let raf = null;
+    let lastT = 0;
+    let mouseX = -Infinity;
+    let over = false;
+
+    // Integrate one spring: damped harmonic oscillator a = (k*target - c*v)/m
+    const integrate = (sp, target) => {
+      const acc = (SP.stiffness * (target - sp.s) - SP.damping * sp.v) / SP.mass;
+      sp.v += acc * DT;
+      sp.s += sp.v * DT;
+      if (Math.abs(target - sp.s) < 0.0005 && Math.abs(sp.v) < 0.0005) {
+        sp.s = target;
+        sp.v = 0;
+        return true;
+      }
+      return false;
+    };
+
+    const frame = () => {
+      raf = null;
+      let settling = true;
+      btns.forEach((btn, i) => {
+        const r = btn.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const dist = Math.abs(mouseX - cx);
+        let ts = 1, tl = 0;
+        if (over && dist < MAX) {
+          const k = 1 - dist / MAX;
+          ts = 1 + k * 0.45;
+          tl = -k * 6;
+        }
+        settling = integrate(springs[i].scale, ts) && settling;
+        settling = integrate(springs[i].lift, tl) && settling;
+        btn.style.transform =
+          `translateY(${springs[i].lift.s.toFixed(3)}px) scale(${springs[i].scale.s.toFixed(3)})`;
       });
+      if (!settling || over) raf = requestAnimationFrame(frame);
     };
-    const onLeave = () => {
-      btns.forEach(btn => btn.style.transform = '');
-    };
-    nav.addEventListener('mousemove', onMove);
-    nav.addEventListener('mouseleave', onLeave);
+
+    const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+
+    nav.addEventListener('mousemove', e => { mouseX = e.clientX; kick(); });
+    nav.addEventListener('mouseenter', () => { over = true; kick(); });
+    nav.addEventListener('mouseleave', () => { over = false; kick(); });
   }
 
   // ============= INIT =============

@@ -2234,7 +2234,7 @@ button.status-clickable:hover .status-arrow {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 0.2s, background 0.2s, transform 0.15s ease-out;
+  transition: color 0.2s, background 0.2s;
   will-change: transform;
 }
 .nav-icon {
@@ -2244,7 +2244,7 @@ button.status-clickable:hover .status-arrow {
   transition: transform 0.15s ease-out;
 }
 .nav-btn:hover { color: var(--text-soft); background: rgba(255, 255, 255, 0.04); }
-.nav-btn:active { color: var(--text); }
+.nav-btn:active { color: var(--text); transform: none; }
 .nav-btn.active { color: var(--primary-2); }
 .nav-btn.active:hover { color: var(--primary-2); }
 .nav-btn.active::after {
