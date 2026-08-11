@@ -2688,6 +2688,43 @@ Summoner Name: `;
     wrap.addEventListener('pointerleave', onLeave);
   }
 
+  // Dock magnifier — the nav icon grows as the cursor gets near it
+  // (vanilla reimplementation of the FloatingDock hover effect)
+  function initDockMagnifier() {
+    const nav = $('.nav');
+    if (!nav) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const btns = Array.from(nav.querySelectorAll('.nav-btn'));
+
+    let raf = null;
+    const onMove = e => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        const mx = e.clientX;
+        btns.forEach(btn => {
+          const r = btn.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const dist = Math.abs(mx - cx);
+          const max = 160;
+          if (dist < max) {
+            const t = 1 - dist / max;
+            const scale = 1 + t * 0.45;
+            const dy = -t * 6;
+            btn.style.transform = `translateY(${dy}px) scale(${scale})`;
+          } else {
+            btn.style.transform = '';
+          }
+        });
+      });
+    };
+    const onLeave = () => {
+      btns.forEach(btn => btn.style.transform = '');
+    };
+    nav.addEventListener('mousemove', onMove);
+    nav.addEventListener('mouseleave', onLeave);
+  }
+
   // ============= INIT =============
   function init() {
     // Splash + auth
@@ -2707,6 +2744,7 @@ Summoner Name: `;
     $('#signup-pass').addEventListener('input', updatePwStrength);
     bindPwToggles();
     bindAuthTilt();
+    initDockMagnifier();
 
     // Logout
     $('#logout').addEventListener('click', logout);
