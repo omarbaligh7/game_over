@@ -2726,17 +2726,20 @@ Summoner Name: `;
     // Each button holds one spring for its scale factor
     const springs = btns.map(() => ({ scale: { s: MIN_S, v: 0 } }));
 
-    // Integrate one spring: damped harmonic oscillator a = (k*target - c*v)/m
+    // Integrate one spring: damped harmonic oscillator a = (k*target - c*v)/m,
+    // using 4 substeps per frame so the stiff spring stays numerically stable
+    // (no visual ringing/jitter) with the exact motion spring constants.
+    const SUB = 4;
     const integrate = (sp, target) => {
-      const acc = (SP.stiffness * (target - sp.s) - SP.damping * sp.v) / SP.mass;
-      sp.v += acc * DT;
-      sp.s = clamp(sp.s + sp.v * DT, MIN_S, MAX_S);
-      if (Math.abs(target - sp.s) < 0.001 && Math.abs(sp.v) < 0.001) {
-        sp.s = target;
-        sp.v = 0;
-        return true;
+      let settled = true;
+      for (let k = 0; k < SUB; k++) {
+        const h = DT / SUB;
+        const acc = (SP.stiffness * (target - sp.s) - SP.damping * sp.v) / SP.mass;
+        sp.v += acc * h;
+        sp.s = clamp(sp.s + sp.v * h, MIN_S, MAX_S);
+        if (Math.abs(target - sp.s) >= 0.001 || Math.abs(sp.v) >= 0.001) settled = false;
       }
-      return false;
+      return settled;
     };
 
     let raf = null;
@@ -2745,16 +2748,21 @@ Summoner Name: `;
 
     const frame = () => {
       raf = null;
-      let settling = true;
-      btns.forEach((btn, i) => {
-        const r = btn.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const dist = Math.abs(mouseX - cx);
-        const t = over ? clamp(1 - dist / MAX, 0, 1) : 0;
-        settling = integrate(springs[i].scale, MIN_S + t * (MAX_S - MIN_S)) && settling;
-        apply(i, springs[i].scale.s);
-      });
-      if (!settling) raf = requestAnimationFrame(frame);
+      try {
+        let settling = true;
+        btns.forEach((btn, i) => {
+          const r = btn.getBoundingClientRect();
+          const cx = r.left + r.width / 2;
+          const dist = Math.abs(mouseX - cx);
+          const t = over ? clamp(1 - dist / MAX, 0, 1) : 0;
+          settling = integrate(springs[i].scale, MIN_S + t * (MAX_S - MIN_S)) && settling;
+          apply(i, springs[i].scale.s);
+        });
+        if (!settling) raf = requestAnimationFrame(frame);
+      } catch (err) {
+        // Fail-safe: never let the dock magnifier break the page
+        btns.forEach((b, i) => apply(i, MIN_S));
+      }
     };
 
     const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
