@@ -2689,29 +2689,22 @@ Summoner Name: `;
   }
 
   // Dock magnifier — vanilla reimplementation of the Aceternity FloatingDock
-  // hover effect. The spring (mass: 0.1, stiffness: 150, damping: 12) drives
-  // the container width/height (40→80px) and icon size (20→40px), clamped to
-  // min/max so neighbors push apart smoothly with no visual distortion.
+  // hover effect. The spring (mass: 0.1, stiffness: 150, damping: 12) drives a
+  // transform scale (1 → 1.5) so NO layout reflow happens: icons pop up without
+  // resizing the dock or the sticky header, keeping the page rock-stable.
   function initDockMagnifier() {
     const nav = $('.nav');
     if (!nav) return;
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const btns = Array.from(nav.querySelectorAll('.nav-btn'));
-    const icons = btns.map(b => b.querySelector('.nav-icon'));
     const MAX = 160;
     const SP = { mass: 0.1, stiffness: 150, damping: 12 };
     const DT = 1 / 60;
-    const MIN_W = 40, MAX_W = 80;   // container width/height range
-    const MIN_I = 20, MAX_I = 40;   // icon width/height range
+    const MIN_S = 1, MAX_S = 1.5;
 
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    const apply = (i, w, iw) => {
-      btns[i].style.width = w.toFixed(2) + 'px';
-      btns[i].style.height = w.toFixed(2) + 'px';
-      if (icons[i]) {
-        icons[i].style.width = iw.toFixed(2) + 'px';
-        icons[i].style.height = iw.toFixed(2) + 'px';
-      }
+    const apply = (i, s) => {
+      btns[i].style.transform = `scale(${s.toFixed(3)})`;
     };
 
     if (reduced) {
@@ -2721,27 +2714,24 @@ Summoner Name: `;
           const r = btn.getBoundingClientRect();
           const cx = r.left + r.width / 2;
           const t = clamp(1 - Math.abs(e.clientX - cx) / MAX, 0, 1);
-          apply(i, MIN_W + t * (MAX_W - MIN_W), MIN_I + t * (MAX_I - MIN_I));
+          apply(i, MIN_S + t * (MAX_S - MIN_S));
         });
       };
-      const onLeaveSnap = () => btns.forEach((b, i) => apply(i, MIN_W, MIN_I));
+      const onLeaveSnap = () => btns.forEach((b, i) => apply(i, MIN_S));
       nav.addEventListener('mousemove', onMoveSnap);
       nav.addEventListener('mouseleave', onLeaveSnap);
       return;
     }
 
-    // Each button holds two springs: container size and icon size
-    const springs = btns.map(() => ({
-      size: { s: MIN_W, v: 0 },
-      isize: { s: MIN_I, v: 0 },
-    }));
+    // Each button holds one spring for its scale factor
+    const springs = btns.map(() => ({ scale: { s: MIN_S, v: 0 } }));
 
     // Integrate one spring: damped harmonic oscillator a = (k*target - c*v)/m
-    const integrate = (sp, target, lo, hi) => {
+    const integrate = (sp, target) => {
       const acc = (SP.stiffness * (target - sp.s) - SP.damping * sp.v) / SP.mass;
       sp.v += acc * DT;
-      sp.s = clamp(sp.s + sp.v * DT, lo, hi);
-      if (Math.abs(target - sp.s) < 0.005 && Math.abs(sp.v) < 0.005) {
+      sp.s = clamp(sp.s + sp.v * DT, MIN_S, MAX_S);
+      if (Math.abs(target - sp.s) < 0.001 && Math.abs(sp.v) < 0.001) {
         sp.s = target;
         sp.v = 0;
         return true;
@@ -2761,11 +2751,10 @@ Summoner Name: `;
         const cx = r.left + r.width / 2;
         const dist = Math.abs(mouseX - cx);
         const t = over ? clamp(1 - dist / MAX, 0, 1) : 0;
-        settling = integrate(springs[i].size, MIN_W + t * (MAX_W - MIN_W), MIN_W, MAX_W) && settling;
-        settling = integrate(springs[i].isize, MIN_I + t * (MAX_I - MIN_I), MIN_I, MAX_I) && settling;
-        apply(i, springs[i].size.s, springs[i].isize.s);
+        settling = integrate(springs[i].scale, MIN_S + t * (MAX_S - MIN_S)) && settling;
+        apply(i, springs[i].scale.s);
       });
-      if (!settling || over) raf = requestAnimationFrame(frame);
+      if (!settling) raf = requestAnimationFrame(frame);
     };
 
     const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };

@@ -2237,7 +2237,8 @@ button.status-clickable:hover .status-arrow {
   justify-content: center;
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
-  will-change: width, height;
+  will-change: transform;
+  transform-origin: center bottom;
 }
 .nav-icon {
   width: 20px;
