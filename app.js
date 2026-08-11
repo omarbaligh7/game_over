@@ -2689,57 +2689,69 @@ Summoner Name: `;
   }
 
   // Dock magnifier — vanilla reimplementation of the Aceternity FloatingDock
-  // hover effect, using the exact same spring physics as motion's useSpring
-  // (mass: 0.1, stiffness: 150, damping: 12) via a damped-oscillator rAF loop.
+  // hover effect. The spring (mass: 0.1, stiffness: 150, damping: 12) drives
+  // the container width/height (40→80px) and icon size (20→40px), clamped to
+  // min/max so neighbors push apart smoothly with no visual distortion.
   function initDockMagnifier() {
     const nav = $('.nav');
     if (!nav) return;
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const btns = Array.from(nav.querySelectorAll('.nav-btn'));
+    const icons = btns.map(b => b.querySelector('.nav-icon'));
     const MAX = 160;
     const SP = { mass: 0.1, stiffness: 150, damping: 12 };
     const DT = 1 / 60;
+    const MIN_W = 40, MAX_W = 80;   // container width/height range
+    const MIN_I = 20, MAX_I = 40;   // icon width/height range
+
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const apply = (i, w, iw) => {
+      btns[i].style.width = w.toFixed(2) + 'px';
+      btns[i].style.height = w.toFixed(2) + 'px';
+      if (icons[i]) {
+        icons[i].style.width = iw.toFixed(2) + 'px';
+        icons[i].style.height = iw.toFixed(2) + 'px';
+      }
+    };
 
     if (reduced) {
       // Reduced motion: snap instantly, no spring animation
       const onMoveSnap = e => {
-        btns.forEach(btn => {
+        btns.forEach((btn, i) => {
           const r = btn.getBoundingClientRect();
           const cx = r.left + r.width / 2;
-          const dist = Math.abs(e.clientX - cx);
-          const t = dist < MAX ? 1 - dist / MAX : 0;
-          btn.style.transform = `translateY(${(-t * 6).toFixed(1)}px) scale(${(1 + t * 0.45).toFixed(2)})`;
+          const t = clamp(1 - Math.abs(e.clientX - cx) / MAX, 0, 1);
+          apply(i, MIN_W + t * (MAX_W - MIN_W), MIN_I + t * (MAX_I - MIN_I));
         });
       };
-      const onLeaveSnap = () => btns.forEach(btn => (btn.style.transform = ''));
+      const onLeaveSnap = () => btns.forEach((b, i) => apply(i, MIN_W, MIN_I));
       nav.addEventListener('mousemove', onMoveSnap);
       nav.addEventListener('mouseleave', onLeaveSnap);
       return;
     }
 
-    // Each button holds two springs: scale and lift (translateY)
+    // Each button holds two springs: container size and icon size
     const springs = btns.map(() => ({
-      scale: { s: 1, v: 0 },
-      lift: { s: 0, v: 0 },
+      size: { s: MIN_W, v: 0 },
+      isize: { s: MIN_I, v: 0 },
     }));
 
-    let raf = null;
-    let lastT = 0;
-    let mouseX = -Infinity;
-    let over = false;
-
     // Integrate one spring: damped harmonic oscillator a = (k*target - c*v)/m
-    const integrate = (sp, target) => {
+    const integrate = (sp, target, lo, hi) => {
       const acc = (SP.stiffness * (target - sp.s) - SP.damping * sp.v) / SP.mass;
       sp.v += acc * DT;
-      sp.s += sp.v * DT;
-      if (Math.abs(target - sp.s) < 0.0005 && Math.abs(sp.v) < 0.0005) {
+      sp.s = clamp(sp.s + sp.v * DT, lo, hi);
+      if (Math.abs(target - sp.s) < 0.005 && Math.abs(sp.v) < 0.005) {
         sp.s = target;
         sp.v = 0;
         return true;
       }
       return false;
     };
+
+    let raf = null;
+    let mouseX = -Infinity;
+    let over = false;
 
     const frame = () => {
       raf = null;
@@ -2748,16 +2760,10 @@ Summoner Name: `;
         const r = btn.getBoundingClientRect();
         const cx = r.left + r.width / 2;
         const dist = Math.abs(mouseX - cx);
-        let ts = 1, tl = 0;
-        if (over && dist < MAX) {
-          const k = 1 - dist / MAX;
-          ts = 1 + k * 0.45;
-          tl = -k * 6;
-        }
-        settling = integrate(springs[i].scale, ts) && settling;
-        settling = integrate(springs[i].lift, tl) && settling;
-        btn.style.transform =
-          `translateY(${springs[i].lift.s.toFixed(3)}px) scale(${springs[i].scale.s.toFixed(3)})`;
+        const t = over ? clamp(1 - dist / MAX, 0, 1) : 0;
+        settling = integrate(springs[i].size, MIN_W + t * (MAX_W - MIN_W), MIN_W, MAX_W) && settling;
+        settling = integrate(springs[i].isize, MIN_I + t * (MAX_I - MIN_I), MIN_I, MAX_I) && settling;
+        apply(i, springs[i].size.s, springs[i].isize.s);
       });
       if (!settling || over) raf = requestAnimationFrame(frame);
     };

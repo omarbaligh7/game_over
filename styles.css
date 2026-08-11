@@ -2190,9 +2190,9 @@ button.status-clickable:hover .status-arrow {
 /* ============ NAV DOCK — vanilla FloatingDock restyle ============ */
 .nav {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 10px 14px 12px;
   background: rgba(21, 18, 43, 0.75);
   border: 1px solid var(--border-2);
   border-radius: 30px;
@@ -2202,6 +2202,8 @@ button.status-clickable:hover .status-arrow {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   position: relative;
+  z-index: 50;
+  overflow: visible;
 }
 .nav-indicator {
   position: absolute;
@@ -2235,16 +2237,15 @@ button.status-clickable:hover .status-arrow {
   justify-content: center;
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
-  will-change: transform;
+  will-change: width, height;
 }
 .nav-icon {
   width: 20px;
   height: 20px;
   display: block;
-  transition: transform 0.15s ease-out;
 }
 .nav-btn:hover { color: var(--text-soft); background: rgba(255, 255, 255, 0.04); }
-.nav-btn:active { color: var(--text); transform: none; }
+.nav-btn:active { color: var(--text); }
 .nav-btn.active { color: var(--primary-2); }
 .nav-btn.active:hover { color: var(--primary-2); }
 .nav-btn.active::after {
@@ -2261,9 +2262,9 @@ button.status-clickable:hover .status-arrow {
 }
 .nav-tip {
   position: absolute;
-  top: -38px;
+  top: calc(100% + 10px);
   left: 50%;
-  transform: translateX(-50%) translateY(4px);
+  transform: translateX(-50%) translateY(-4px);
   padding: 4px 10px;
   background: var(--surface-3);
   border: 1px solid var(--border-2);
@@ -2276,23 +2277,22 @@ button.status-clickable:hover .status-arrow {
   pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  z-index: 60;
 }
 .nav-tip::after {
   content: '';
   position: absolute;
-  bottom: -4px;
+  top: -4px;
   left: 50%;
   transform: translateX(-50%) rotate(45deg);
   width: 8px;
   height: 8px;
   background: var(--surface-3);
-  border-right: 1px solid var(--border-2);
-  border-bottom: 1px solid var(--border-2);
+  border-left: 1px solid var(--border-2);
+  border-top: 1px solid var(--border-2);
 }
 .nav-btn:hover .nav-tip,
 .nav-btn:focus-visible .nav-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
-.nav-btn:hover .nav-icon,
-.nav-btn:focus-visible .nav-icon { transform: scale(1.12); }
 
 @media (max-width: 768px) {
   .nav { order: 3; width: auto; justify-content: center; padding: 8px 10px; gap: 6px; }
