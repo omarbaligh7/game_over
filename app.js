@@ -511,6 +511,7 @@
     salesLog: [],           // permanent sales history — survives account deletion
     currentView: 'dashboard',
     currentGame: 'all',
+    marketplaceFilter: 'all', // 'all' | 'listed' | 'sold' — فلاتر قسم السوق
   };
 
   const BOOST_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -564,10 +565,9 @@
     seedFresh();
   }
 
-  // Give every account a permanent, creation-order number (#1, #2, ...).
-  // This used to be recomputed from the sorted/filtered list position, which
-  // made the numbers jump around alphabetically. Now each account keeps the
-  // number it was given when first added, regardless of sorting or filters.
+  // كل حساب بياخد رقم تسلسلي دائم (seq) لحظة إضافته، بيُستخدم للترتيب فقط.
+  // الرقم اللي بيتعرض على الكارت (#1..N) بيتحسب دلوقتي ديناميكياً حسب
+  // القائمة الظاهرة (كل الألعاب / لعبة معينة / السوق) — مش الرقم العام.
   function ensureAccountSeq() {
     let maxSeq = 0;
     STATE.accounts.forEach(a => { if (a.seq && a.seq > maxSeq) maxSeq = a.seq; });
@@ -867,6 +867,7 @@
     const target = $('#view-' + name);
     if (target) target.classList.add('active');
     if (name === 'archive') renderArchiveCards();
+    if (name === 'marketplace') renderMarketplace();
     if (name === 'analytics') renderAnalytics();
     if (name === 'sales') renderSalesLog();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -879,16 +880,23 @@
     renderGamesBar();
     renderCards();
     renderBoosts();
+    renderMarketplace();
     if (STATE.accounts.some(a => isStarActive(a))) startFavTicker();
   }
 
   // ============= BOOSTS (24h cloud) =============
   function getAccountIndex(accountId) {
-    // Account number = its 1-based position in the currently filtered list
-    const filtered = STATE.currentGame === 'all'
+    // Scoped index: position (1-based) داخل القائمة الرئيسية الظاهرة حالياً
+    // (نفس منطق renderCards — بعيداً عن الأرشيف وعن المعروض/المباع).
+    const all = STATE.currentGame === 'all'
       ? STATE.accounts
       : STATE.accounts.filter(a => a.gameId === STATE.currentGame);
-    const idx = filtered.findIndex(a => a.id === accountId);
+    const visible = all.filter(a =>
+      !STATE.boosts.some(b => b.accountId === a.id) &&
+      a.status !== 'listed' &&
+      a.status !== 'sold'
+    );
+    const idx = visible.findIndex(a => a.id === accountId);
     return idx >= 0 ? idx + 1 : null;
   }
 
@@ -1473,9 +1481,16 @@
       : STATE.accounts.filter(a => a.gameId === STATE.currentGame);
     // Accounts with an active countdown timer live in the Archive tab instead
     // of the dashboard, until their timer hits zero.
-    const dashboardList = all.filter(a => !STATE.boosts.some(b => b.accountId === a.id));
+    // Accounts marked "معروض للبيع" / "تم البيع" only live in the Marketplace
+    // tab — they're hidden from the main list entirely.
+    const dashboardList = all.filter(a =>
+      !STATE.boosts.some(b => b.accountId === a.id) &&
+      a.status !== 'listed' &&
+      a.status !== 'sold'
+    );
     renderCardsGrid($('#cards-grid'), dashboardList, 'لا توجد حسابات هنا', 'أضف حساب جديد أو غيّر التبويب لتبدأ');
     renderArchiveCards();
+    renderMarketplace();
   }
 
   // Cards currently "في الأرشيف" — accounts with an active countdown timer
@@ -1486,6 +1501,28 @@
     if (!archiveGrid) return;
     const archived = STATE.accounts.filter(a => STATE.boosts.some(b => b.accountId === a.id));
     renderCardsGrid(archiveGrid, archived, 'الأرشيف فاضي دلوقتي', 'الحسابات اللي بتتحقق بعد الرفع بالسحابة ☁️ هتظهر هنا لحد ما التايمر يخلّص');
+  }
+
+  // ============= MARKETPLACE (معروض للبيع / تم البيع) =============
+  // حسابات الـ status == 'listed' أو 'sold' مش بتظهر في القائمة الرئيسية —
+  // بتتجمع هنا مع فلاتر (الكل / معروض للبيع / تم البيع).
+  function renderMarketplace() {
+    const grid = $('#marketplace-cards-grid');
+    if (!grid) return;
+    const filter = STATE.marketplaceFilter || 'all';
+    const bySeq = (a, b) => (a.seq || 0) - (b.seq || 0);
+    const listed = STATE.accounts.filter(a => a.status === 'listed').sort(bySeq);
+    const sold = STATE.accounts.filter(a => a.status === 'sold').sort(bySeq);
+    const filtered = filter === 'listed' ? listed : filter === 'sold' ? sold : [...listed, ...sold];
+
+    const countEl = $('#marketplace-count');
+    if (countEl) countEl.textContent = `${filtered.length} حساب`;
+    const emptySub = filter === 'listed'
+      ? 'مفيش حسابات معروضة للبيع دلوقتي'
+      : filter === 'sold'
+        ? 'مفيش حسابات مبيعة لحد دلوقتي'
+        : 'غيّر حالة أي حساب لـ "معروض للبيع" أو "تم البيع" وهيظهر هنا تلقائياً';
+    renderCardsGrid(grid, filtered, 'السوق فاضي دلوقتي', emptySub);
   }
 
   function renderCardsGrid(grid, filtered, emptyTitle, emptySub) {
@@ -1510,7 +1547,7 @@
       const game = STATE.games.find(g => g.id === a.gameId);
       const profit = getAccountProfitEgp(a, game);
       const statusText = a.status === 'listed' ? 'معروض للبيع' : a.status === 'sold' ? 'تم البيع' : 'غير معروض';
-      const num = a.seq || (i + 1);
+      const num = i + 1; // Scoped index: 1..N داخل القائمة المعروضة دلوقتي بس
       const activeBoost = STATE.boosts.find(b => b.accountId === a.id);
       const timerHTML = activeBoost ? renderCardTimerHTML(activeBoost) : '';
 
@@ -2777,6 +2814,15 @@ Summoner Name: `;
 
     // Nav
     $$('.nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+
+    // Marketplace filters (الكل / معروض للبيع / تم البيع)
+    $$('#marketplace-filters .game-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        STATE.marketplaceFilter = btn.dataset.mpFilter;
+        $$('#marketplace-filters .game-tab').forEach(x => x.classList.toggle('active', x === btn));
+        renderMarketplace();
+      });
+    });
 
     // Add buttons
     $('#add-game').addEventListener('click', () => openGameModal());
