@@ -283,12 +283,7 @@
         e.stopPropagation();
         const newStatus = btn.dataset.status;
         if (newStatus === a.status) { closeStatusPicker(); return; }
-        a.status = newStatus;
-        if (newStatus === 'sold' && !a.soldAt) {
-          a.soldAt = Date.now();
-          freezeSoldPrice(a, STATE.games.find(g => g.id === a.gameId));
-        }
-        if (newStatus !== 'sold') { a.soldAt = null; a.soldNetEgp = null; }
+        setAccountStatus(a, newStatus);
         saveUserData();
         renderAll();
         playSound('status');
@@ -512,6 +507,7 @@
     currentView: 'dashboard',
     currentGame: 'all',
     marketplaceFilter: 'all', // 'all' | 'listed' | 'sold' — فلاتر قسم السوق
+    marketplaceGame: 'all',   // 'all' | gameId — فلتر اللعبة في قسم السوق
   };
 
   const BOOST_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -547,6 +543,7 @@
           applyUserData(d);
           localStorage.setItem(dataKey(username), JSON.stringify(d));
           ensureAccountSeq();
+          ensureMarketSeq();
           return;
         }
       } catch (e) {
@@ -559,6 +556,7 @@
         const d = JSON.parse(raw);
         applyUserData(d);
         ensureAccountSeq();
+        ensureMarketSeq();
         return;
       }
     } catch (e) { console.warn('load error', e); }
@@ -580,6 +578,51 @@
       }
     });
     if (changed) saveUserData();
+  }
+
+  // ============= MARKETPLACE NUMBERING (marketSeq) =============
+  // رقم السوق بيترتب حسب اللحظة اللي الحساب دخل فيها السوق أول مرة:
+  // أول حساب "معروض للبيع" بياخد #1، اللي بعده #2 وهكذا. الرقم ده ثابت
+  // للحساب طول ما هو في السوق، وبيتشال لو رجع "غير معروض" (ولو دخل تاني
+  // ياخد رقم جديد في النهاية).
+  function setAccountStatus(a, status) {
+    a.status = status;
+    if (status === 'sold' && !a.soldAt) {
+      a.soldAt = Date.now();
+      freezeSoldPrice(a, STATE.games.find(g => g.id === a.gameId));
+    }
+    if (status !== 'sold') { a.soldAt = null; a.soldNetEgp = null; }
+    if (status === 'listed' || status === 'sold') {
+      if (!a.marketSeq) {
+        const maxMarketSeq = STATE.accounts.reduce((m, x) => Math.max(m, x.marketSeq || 0), 0);
+        a.marketSeq = maxMarketSeq + 1;
+      }
+    } else {
+      delete a.marketSeq;
+    }
+  }
+
+  // الحسابات القديمة اللي كانت في السوق قبل إضافة الترقيم — بيديها أرقام
+  // تسلسلية حسب seq (ترتيب الإضافة) عشان تفضل #1 و #2 وهكذا.
+  function ensureMarketSeq() {
+    const missing = STATE.accounts
+      .filter(a => (a.status === 'listed' || a.status === 'sold') && !a.marketSeq)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0));
+    if (missing.length === 0) return;
+    let maxMarketSeq = STATE.accounts.reduce((m, x) => Math.max(m, x.marketSeq || 0), 0);
+    missing.forEach(a => { maxMarketSeq += 1; a.marketSeq = maxMarketSeq; });
+    saveUserData();
+  }
+
+  // الرقم "الأصلي" للحساب في القائمة الرئيسية (كل الألعاب) — ترتيب seq بين
+  // الحسابات غير المعروضة/المبيعة. بيتحفظ على الحساب طول ما هو في الأرشيف،
+  // فبيظهر بنفس الرقم في لوحة التحكم وفي الأرشيف.
+  function getAccountMainNumber(a) {
+    const main = STATE.accounts
+      .filter(x => x.status !== 'listed' && x.status !== 'sold')
+      .sort((x, y) => (x.seq || 0) - (y.seq || 0));
+    const idx = main.findIndex(x => x.id === a.id);
+    return idx >= 0 ? idx + 1 : null;
   }
 
   function saveUserData() {
@@ -1350,6 +1393,7 @@
     STATE.games = STATE.games.filter(x => x.id !== gameId);
     // If that was the currently-selected tab, fall back to "كل الألعاب"
     if (STATE.currentGame === gameId) STATE.currentGame = 'all';
+    if (STATE.marketplaceGame === gameId) STATE.marketplaceGame = 'all';
 
     saveUserData();
     renderAll();
@@ -1488,7 +1532,12 @@
       a.status !== 'listed' &&
       a.status !== 'sold'
     );
-    renderCardsGrid($('#cards-grid'), dashboardList, 'لا توجد حسابات هنا', 'أضف حساب جديد أو غيّر التبويب لتبدأ');
+    renderCardsGrid($('#cards-grid'), dashboardList, 'لا توجد حسابات هنا', 'أضف حساب جديد أو غيّر التبويب لتبدأ',
+      // في تبويب "كل الألعاب" كل حساب بياخد رقمه الأصلي الثابت في القائمة
+      // الرئيسية (نفس الرقم اللي بيحافظ عليه لما يروح الأرشيف). في تبويب
+      // لعبة معينة الترقيم متسلسل داخل اللعبة بس (#1..N).
+      STATE.currentGame === 'all' ? a => getAccountMainNumber(a) || null : null
+    );
     renderArchiveCards();
     renderMarketplace();
   }
@@ -1500,32 +1549,59 @@
     const archiveGrid = $('#archive-cards-grid');
     if (!archiveGrid) return;
     const archived = STATE.accounts.filter(a => STATE.boosts.some(b => b.accountId === a.id));
-    renderCardsGrid(archiveGrid, archived, 'الأرشيف فاضي دلوقتي', 'الحسابات اللي بتتحقق بعد الرفع بالسحابة ☁️ هتظهر هنا لحد ما التايمر يخلّص');
+    // الأرشيف بيعرض نفس الرقم الأصلي للحساب في لوحة التحكم (#2 يفضل #2)
+    renderCardsGrid(archiveGrid, archived, 'الأرشيف فاضي دلوقتي', 'الحسابات اللي بتتحقق بعد الرفع بالسحابة ☁️ هتظهر هنا لحد ما التايمر يخلّص', a => getAccountMainNumber(a) || null);
   }
 
   // ============= MARKETPLACE (معروض للبيع / تم البيع) =============
   // حسابات الـ status == 'listed' أو 'sold' مش بتظهر في القائمة الرئيسية —
-  // بتتجمع هنا مع فلاتر (الكل / معروض للبيع / تم البيع).
+  // بتتجمع هنا مع فلاتر حالة (الكل / معروض للبيع / تم البيع) وفلاتر ألعاب
+  // متزامنة تلقائياً مع لوحة التحكم. الترقيم زمني (marketSeq): بترتيب اللحظة
+  // اللي كل حساب دخل فيها السوق (#1, #2, #3, ...).
+  function renderMarketplaceGames() {
+    const list = $('#marketplace-games');
+    if (!list) return;
+    const allTab = `
+      <button type="button" class="game-tab ${STATE.marketplaceGame === 'all' ? 'active' : ''}" data-mp-game="all">
+        <span class="game-dot" style="background:#a855f7"></span> كل الألعاب
+      </button>`;
+    const tabs = STATE.games.map(g => `
+      <button type="button" class="game-tab ${STATE.marketplaceGame === g.id ? 'active' : ''}" data-mp-game="${esc(g.id)}">
+        <span class="game-dot" style="background:${esc(g.color)}"></span>${esc(g.name)}
+      </button>`).join('');
+    list.innerHTML = allTab + tabs;
+    list.querySelectorAll('.game-tab').forEach(b => {
+      b.addEventListener('click', () => {
+        STATE.marketplaceGame = b.dataset.mpGame;
+        renderMarketplace();
+      });
+    });
+  }
+
   function renderMarketplace() {
+    renderMarketplaceGames();
     const grid = $('#marketplace-cards-grid');
     if (!grid) return;
-    const filter = STATE.marketplaceFilter || 'all';
-    const bySeq = (a, b) => (a.seq || 0) - (b.seq || 0);
-    const listed = STATE.accounts.filter(a => a.status === 'listed').sort(bySeq);
-    const sold = STATE.accounts.filter(a => a.status === 'sold').sort(bySeq);
-    const filtered = filter === 'listed' ? listed : filter === 'sold' ? sold : [...listed, ...sold];
+    const sFilter = STATE.marketplaceFilter || 'all';
+    const gFilter = STATE.marketplaceGame || 'all';
+    let pool = STATE.accounts.filter(a => a.status === 'listed' || a.status === 'sold');
+    if (gFilter !== 'all') pool = pool.filter(a => a.gameId === gFilter);
+    const byMarket = (a, b) => (a.marketSeq || Number.MAX_SAFE_INTEGER) - (b.marketSeq || Number.MAX_SAFE_INTEGER);
+    const filtered = sFilter === 'listed' ? pool.filter(a => a.status === 'listed')
+      : sFilter === 'sold' ? pool.filter(a => a.status === 'sold')
+      : [...pool];
 
     const countEl = $('#marketplace-count');
     if (countEl) countEl.textContent = `${filtered.length} حساب`;
-    const emptySub = filter === 'listed'
+    const emptySub = sFilter === 'listed'
       ? 'مفيش حسابات معروضة للبيع دلوقتي'
-      : filter === 'sold'
+      : sFilter === 'sold'
         ? 'مفيش حسابات مبيعة لحد دلوقتي'
         : 'غيّر حالة أي حساب لـ "معروض للبيع" أو "تم البيع" وهيظهر هنا تلقائياً';
-    renderCardsGrid(grid, filtered, 'السوق فاضي دلوقتي', emptySub);
+    renderCardsGrid(grid, filtered, 'السوق فاضي دلوقتي', emptySub, (a, i) => a.marketSeq || (i + 1), byMarket);
   }
 
-  function renderCardsGrid(grid, filtered, emptyTitle, emptySub) {
+  function renderCardsGrid(grid, filtered, emptyTitle, emptySub, numFn, sortFn) {
     if (!grid) return;
     if (filtered.length === 0) {
       grid.innerHTML = `
@@ -1537,17 +1613,23 @@
       return;
     }
 
-    filtered.sort((a, b) => {
-      if (isStarActive(a) !== isStarActive(b)) return isStarActive(b) ? 1 : -1;
-      if (a.seq && b.seq) return a.seq - b.seq;
-      return a.name.localeCompare(b.name);
-    });
+    if (sortFn) {
+      filtered.sort(sortFn);
+    } else {
+      filtered.sort((a, b) => {
+        if (isStarActive(a) !== isStarActive(b)) return isStarActive(b) ? 1 : -1;
+        if (a.seq && b.seq) return a.seq - b.seq;
+        return a.name.localeCompare(b.name);
+      });
+    }
 
     grid.innerHTML = filtered.map((a, i) => {
       const game = STATE.games.find(g => g.id === a.gameId);
       const profit = getAccountProfitEgp(a, game);
       const statusText = a.status === 'listed' ? 'معروض للبيع' : a.status === 'sold' ? 'تم البيع' : 'غير معروض';
-      const num = i + 1; // Scoped index: 1..N داخل القائمة المعروضة دلوقتي بس
+      // الرقم المعروض: numFn بيحدده (الرقم الأصلي في القائمة الرئيسية أو رقم
+      // السوق الزمني) ولو مفيهوش → الموقع في القائمة الحالية (i+1).
+      const num = numFn ? (numFn(a, i) || (i + 1)) : (i + 1);
       const activeBoost = STATE.boosts.find(b => b.accountId === a.id);
       const timerHTML = activeBoost ? renderCardTimerHTML(activeBoost) : '';
 
@@ -1885,16 +1967,12 @@
     if (!a) return;
     const order = ['not-listed', 'listed', 'sold'];
     const labels = { 'not-listed': 'غير معروض', 'listed': 'معروض', 'sold': 'تم البيع' };
-    a.status = order[(order.indexOf(a.status) + 1) % 3];
-    if (a.status === 'sold' && !a.soldAt) {
-      a.soldAt = Date.now();
-      freezeSoldPrice(a, STATE.games.find(g => g.id === a.gameId));
-    }
-    if (a.status !== 'sold') { a.soldAt = null; a.soldNetEgp = null; }
+    const newStatus = order[(order.indexOf(a.status) + 1) % 3];
+    setAccountStatus(a, newStatus);
     saveUserData();
     playSound('status');
     renderAll();
-    toast('تم تغيير الحالة إلى: ' + labels[a.status], 'ok');
+    toast('تم تغيير الحالة إلى: ' + labels[newStatus], 'ok');
   }
 
   function deleteAccount(id) {
@@ -2219,13 +2297,8 @@
       }
 
       if (isEdit) {
-        const wasSold = a.status === 'sold';
         Object.assign(a, { gameId, level, maxLevel, status, info, rank, priceUsd, sitePercentage, notes, imageUrl, platform, trackerId });
-        if (status === 'sold' && !wasSold) {
-          a.soldAt = Date.now();
-          freezeSoldPrice(a, game);
-        }
-        if (status !== 'sold') { a.soldAt = null; a.soldNetEgp = null; }
+        setAccountStatus(a, status);
       } else {
         const nextSeq = STATE.accounts.reduce((m, x) => Math.max(m, x.seq || 0), 0) + 1;
         const newAcc = {
@@ -2234,14 +2307,13 @@
           name: `${game ? game.name : 'حساب'} #${nextSeq}`,
           gameId,
           level, maxLevel,
-          status, info, rank, priceUsd, sitePercentage, notes, imageUrl,
+          info, rank, priceUsd, sitePercentage, notes, imageUrl,
           platform, trackerId,
           starred: false,
           starredAt: null,
-          soldAt: status === 'sold' ? Date.now() : null,
         };
-        if (status === 'sold') freezeSoldPrice(newAcc, game);
         STATE.accounts.push(newAcc);
+        setAccountStatus(newAcc, status);
       }
       saveUserData();
       closeModal();
