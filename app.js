@@ -914,7 +914,13 @@
     if (name === 'analytics') renderAnalytics();
     if (name === 'sales') renderSalesLog();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // جسر مع الـ React GradientMenu (dist-nav/main-nav.js)
+    window.activeNavView = name;
+    window.dispatchEvent(new CustomEvent('gameover:viewchange', { detail: name }));
   }
+  // الـ React nav بيستدعي ده أول ما المستخدم يدوس على أي زرار
+  window.switchView = switchView;
   window.addEventListener('resize', () => moveNavIndicator());
 
   // ============= RENDER =============
