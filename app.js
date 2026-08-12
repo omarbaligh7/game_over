@@ -2696,10 +2696,9 @@ Summoner Name: `;
   function initDockMagnifier() {
     const nav = $('.nav');
     if (!nav) return;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const btns = Array.from(nav.querySelectorAll('.nav-btn'));
     const MAX = 150;
-    const MIN_S = 1, MAX_S = 1.35;
+    const MIN_S = 1, MAX_S = 1.45;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
     // Cached horizontal centers — static, since scale never changes layout
@@ -2746,7 +2745,9 @@ Summoner Name: `;
     const kick = () => { if (!raf) { lastT = 0; raf = requestAnimationFrame(frame); } };
 
     nav.addEventListener('mousemove', e => { mouseX = e.clientX; kick(); });
-    nav.addEventListener('mouseenter', () => { over = true; kick(); });
+    // Re-measure on enter: at init the app is hidden (auth gate), so rects are
+    // all zeros until the user logs in and the dock becomes visible.
+    nav.addEventListener('mouseenter', () => { measure(); over = true; kick(); });
     nav.addEventListener('mouseleave', () => { over = false; kick(); });
   }
 
