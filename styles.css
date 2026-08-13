@@ -785,6 +785,10 @@ input, select, textarea { font-family: inherit; color: inherit; }
   transition: transform 0.3s var(--ease-out), border-color 0.25s, box-shadow 0.3s;
   animation: cardIn 0.45s var(--ease-out) backwards;
   will-change: transform;
+  transform-style: preserve-3d;
+  overflow: hidden;
+  --m-x: 50%;
+  --m-y: 50%;
 }
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(16px) scale(0.97); }
@@ -802,6 +806,33 @@ input, select, textarea { font-family: inherit; color: inherit; }
   transform: translateY(-4px);
   border-color: var(--border-accent);
   box-shadow: var(--shadow-lg);
+}
+/* GlareCard-style moving spotlight (Aceternity) — driven by initCardGlare() */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    600px circle at var(--m-x, 50%) var(--m-y, 50%),
+    rgba(168, 85, 247, 0.13),
+    transparent 45%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+.card.glare-on::before {
+  opacity: 1;
+}
+.card.glare-on {
+  transition: transform 0.15s ease-out, border-color 0.25s, box-shadow 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.glare-on {
+    transition: transform 0.3s var(--ease-out), border-color 0.25s, box-shadow 0.3s;
+  }
 }
 .card-image {
   width: 100%;

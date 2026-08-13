@@ -2765,6 +2765,48 @@ Summoner Name: `;
     nav.addEventListener('mouseleave', () => { over = false; kick(); });
   }
 
+  // ============= CARD GLARE — Aceternity GlareCard effect =============
+  // 3D tilt + a soft spotlight that follows the mouse over every account
+  // card (delegated, so it keeps working as the grids re-render). Reduced
+  // motion is honoured by skipping the tilt entirely.
+  function initCardGlare() {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    let current = null;
+
+    const reset = () => {
+      if (!current) return;
+      current.classList.remove('glare-on');
+      current.style.transform = '';
+      current = null;
+    };
+
+    document.addEventListener('pointermove', (e) => {
+      const card = e.target && e.target.closest ? e.target.closest('.card') : null;
+      // offsetParent is null for hidden (auth-gated) cards — skip those.
+      if (card && card.offsetParent !== null) {
+        const r = card.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return;
+        const px = clamp((e.clientX - r.left) / r.width, 0, 1);
+        const py = clamp((e.clientY - r.top) / r.height, 0, 1);
+        if (current !== card) {
+          if (current) current.classList.remove('glare-on');
+          current = card;
+          card.classList.add('glare-on');
+        }
+        card.style.setProperty('--m-x', (px * 100).toFixed(2) + '%');
+        card.style.setProperty('--m-y', (py * 100).toFixed(2) + '%');
+        const rx = clamp((py - 0.5) * 14, -7, 7);
+        const ry = clamp((px - 0.5) * 14, -7, 7);
+        card.style.transform = `perspective(900px) translateY(-4px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+      } else {
+        reset();
+      }
+    });
+    document.addEventListener('pointerleave', reset);
+    window.addEventListener('blur', reset);
+  }
+
   // ============= INIT =============
   function init() {
     // Splash + auth (the login/signup/forgot-password UI itself is the
@@ -2772,6 +2814,7 @@ Summoner Name: `;
     initSplash();
 
     initDockMagnifier();
+    initCardGlare();
 
     // Logout
     $('#logout').addEventListener('click', logout);
