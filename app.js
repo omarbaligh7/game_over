@@ -750,6 +750,21 @@
     }
   }
 
+  // ============= GOOGLE SIGN-IN — popup provider (needs "Google" enabled in the Firebase console) =============
+  async function authGoogle() {
+    const auth = cloudAuth();
+    if (!auth) throw new Error('تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت');
+    try {
+      await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+      const provider = new firebase.auth.GoogleAuthProvider();
+      const cred = await auth.signInWithPopup(provider);
+      await loginUser(cred.user, true);
+      toast('أهلاً ' + (cred.user.displayName || '') + ' 👋', 'ok');
+    } catch (e2) {
+      throw new Error(authErrorMessage(e2));
+    }
+  }
+
   async function loginUser(user, loadData) {
     CURRENT_USER = user.uid;
     CURRENT_DISPLAY = user.displayName || user.email || 'مستخدم';
@@ -802,6 +817,7 @@
     login: authLogin,
     signup: authSignup,
     forgotPassword: authForgot,
+    googleLogin: authGoogle,
     getRememberedEmail: () => localStorage.getItem(REMEMBER_KEY) || '',
   };
 

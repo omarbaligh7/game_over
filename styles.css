@@ -3,7 +3,9 @@
    Dark base · Vivid violet · Mint accent
    ============================================ */
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+}
 
 :root {
   /* Deep dark base with a subtle violet undertone */
