@@ -770,6 +770,7 @@
     CURRENT_DISPLAY = user.displayName || user.email || 'مستخدم';
     if (loadData) await loadUserData(user.uid);
     seedStarterIfEmpty();
+    $('#landing').classList.add('hidden');
     $('#auth').classList.add('hidden');
     $('#app').classList.remove('hidden');
     $('#user-name-display').textContent = CURRENT_DISPLAY;
@@ -821,13 +822,31 @@
     getRememberedEmail: () => localStorage.getItem(REMEMBER_KEY) || '',
   };
 
+  // ============= BRIDGE FOR THE REACT LANDING HERO =============
+  // The horizon-hero-section landing page (see dist-landing/landing-hero.js,
+  // mounted into #landing-root) is shown once before the auth gate, to
+  // signed-out visitors only. Its "ابدأ الآن" button calls this to hand off
+  // to the login screen.
+  function showAuthGate() {
+    $('#landing').classList.add('hidden');
+    $('#auth').classList.remove('hidden');
+  }
+  window.GameOverLanding = { onEnter: showAuthGate };
+
   // ============= SPLASH =============
+  function showSignedOutEntry() {
+    // Signed-out visitors see the landing hero first; showAuthGate() (wired
+    // to the hero's "ابدأ الآن" button) takes them to the auth gate.
+    $('#landing').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  }
+
   function initSplash() {
     const auth = cloudAuth();
     if (!auth) {
       setTimeout(() => {
         $('#splash').classList.add('hidden');
-        $('#auth').classList.remove('hidden');
+        showSignedOutEntry();
       }, 1300);
       return;
     }
@@ -842,9 +861,7 @@
       if (user) {
         await loginUser(user, true);
       } else {
-        setTimeout(() => {
-          $('#auth').classList.remove('hidden');
-        }, 1300);
+        setTimeout(showSignedOutEntry, 1300);
       }
     });
   }
