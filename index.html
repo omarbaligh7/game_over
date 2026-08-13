@@ -24,8 +24,9 @@
   <!-- Tracker.gg backend proxy config (Cloud Function base URL) — لازم تتحمّل قبل app.js -->
   <script src="tracker-config.js?v=20260813d"></script>
 
-  <link rel="stylesheet" href="styles.css?v=20260813d" />
+  <link rel="stylesheet" href="styles.css?v=20260813k" />
   <link rel="stylesheet" href="dist-nav/main-nav.css?v=20260813j" />
+  <link rel="stylesheet" href="dist-auth/auth-card.css?v=20260813k" />
 </head>
 <body>
   <!-- ============== SPLASH SCREEN ============== -->
@@ -38,160 +39,13 @@
   </div>
 
   <!-- ============== AUTH GATE ============== -->
+  <!-- The login/signup/forgot-password UI is a React component mounted here
+       by dist-auth/auth-card.js. It renders its own full background + glass
+       card + all three forms; this div only controls show/hide (see .auth in
+       styles.css) and calls back into app.js's window.GameOverAuth bridge for
+       the real Firebase Auth calls. -->
   <div id="auth" class="auth hidden">
-    <div class="auth-bg" aria-hidden="true"></div>
-    <div class="auth-noise" aria-hidden="true"></div>
-    <div class="auth-orb auth-orb-top" aria-hidden="true"></div>
-    <div class="auth-orb auth-orb-bottom" aria-hidden="true"></div>
-    <div class="auth-spot auth-spot-1" aria-hidden="true"></div>
-    <div class="auth-spot auth-spot-2" aria-hidden="true"></div>
-
-    <div class="auth-tilt" id="auth-tilt">
-      <div class="auth-card">
-        <div class="auth-glow" aria-hidden="true"></div>
-        <span class="beam beam-t" aria-hidden="true"></span>
-        <span class="beam beam-r" aria-hidden="true"></span>
-        <span class="beam beam-b" aria-hidden="true"></span>
-        <span class="beam beam-l" aria-hidden="true"></span>
-        <span class="corner c-tl" aria-hidden="true"></span>
-        <span class="corner c-tr" aria-hidden="true"></span>
-        <span class="corner c-br" aria-hidden="true"></span>
-        <span class="corner c-bl" aria-hidden="true"></span>
-
-        <div class="auth-shell">
-      <!-- ============== LOGIN FORM ============== -->
-      <form id="form-login" class="auth-form active" autocomplete="on">
-        <div class="auth-head">
-          <div class="auth-badge" aria-hidden="true"><b>G</b></div>
-          <h1 class="auth-title">أهلاً بعودتك</h1>
-          <p class="auth-sub">سجّل دخولك للمتابعة إلى لوحة التحكم</p>
-        </div>
-
-        <div class="field">
-          <label for="login-user">البريد الإلكتروني</label>
-          <div class="input-wrap">
-            <span class="input-icon">@</span>
-            <input type="email" id="login-user" name="email" placeholder="مثال: ahmed@email.com" autocomplete="email" required />
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="login-pass">كلمة المرور</label>
-          <div class="input-wrap">
-            <span class="input-icon">⚿</span>
-            <input type="password" id="login-pass" name="password" placeholder="••••••••" autocomplete="current-password" required />
-            <button type="button" class="toggle-pw" data-target="login-pass" aria-label="إظهار/إخفاء">👁</button>
-          </div>
-        </div>
-
-        <div class="auth-row">
-          <label class="check">
-            <input type="checkbox" id="login-remember" />
-            <span>تذكرني على هذا الجهاز</span>
-          </label>
-          <button type="button" class="link-btn link-faint" data-switch="forgot">نسيت كلمة المرور؟</button>
-        </div>
-
-        <button type="submit" class="auth-btn">
-          <span class="auth-btn-label">تسجيل الدخول</span>
-          <span class="auth-btn-spinner" aria-hidden="true"></span>
-        </button>
-        <div class="form-err" id="login-err"></div>
-
-        <div class="auth-footer">
-          <span class="foot-text">ليس لديك حساب؟</span>
-          <button type="button" class="link-btn link-underline" data-switch="signup">إنشاء حساب جديد</button>
-        </div>
-      </form>
-
-      <!-- ============== SIGNUP FORM ============== -->
-      <form id="form-signup" class="auth-form" autocomplete="on">
-        <div class="auth-head">
-          <div class="auth-badge" aria-hidden="true"><b>G</b></div>
-          <h1 class="auth-title">إنشاء حساب جديد</h1>
-          <p class="auth-sub">كل حساب له مساحة بيانات منفصلة تماماً</p>
-        </div>
-
-        <div class="field">
-          <label for="signup-user">الاسم المعروض</label>
-          <div class="input-wrap">
-            <span class="input-icon">@</span>
-            <input type="text" id="signup-user" name="username" placeholder="3 أحرف على الأقل (أحرف، أرقام، _)" pattern="[A-Za-z0-9_]{3,}" autocomplete="username" required />
-          </div>
-          <div class="field-hint">يظهر في لوحة التحكم فقط، الدخول يتم بالبريد الإلكتروني.</div>
-        </div>
-
-        <div class="field">
-          <label for="signup-email">البريد الإلكتروني</label>
-          <div class="input-wrap">
-            <span class="input-icon">✉</span>
-            <input type="email" id="signup-email" name="email" placeholder="مثال: ahmed@email.com" autocomplete="email" required />
-          </div>
-          <div class="field-hint">يُستخدم لتسجيل الدخول ولاسترجاع كلمة المرور إن نسيتها.</div>
-        </div>
-
-        <div class="field">
-          <label for="signup-pass">كلمة المرور</label>
-          <div class="input-wrap">
-            <span class="input-icon">⚿</span>
-            <input type="password" id="signup-pass" name="password" placeholder="6 أحرف على الأقل" minlength="6" autocomplete="new-password" required />
-            <button type="button" class="toggle-pw" data-target="signup-pass" aria-label="إظهار/إخفاء">👁</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="signup-pass2">تأكيد كلمة المرور</label>
-          <div class="input-wrap">
-            <span class="input-icon">✓</span>
-            <input type="password" id="signup-pass2" name="confirm" placeholder="أعد كتابة كلمة المرور" minlength="6" autocomplete="new-password" required />
-          </div>
-        </div>
-
-        <div class="pw-strength" id="pw-strength" aria-hidden="true">
-          <div class="pw-bar"><span></span></div>
-          <div class="pw-label">قوة كلمة المرور</div>
-        </div>
-
-        <button type="submit" class="auth-btn">
-          <span class="auth-btn-label">إنشاء الحساب</span>
-          <span class="auth-btn-spinner" aria-hidden="true"></span>
-        </button>
-        <div class="form-err" id="signup-err"></div>
-
-        <div class="auth-footer">
-          <button type="button" class="link-btn" data-switch="login">لديك حساب؟ سجّل دخولك</button>
-        </div>
-      </form>
-
-      <!-- ============== FORGOT PASSWORD — via Firebase email reset link ============== -->
-      <form id="form-forgot" class="auth-form" autocomplete="off">
-        <div class="auth-head">
-          <div class="auth-badge" aria-hidden="true"><b>G</b></div>
-          <h1 class="auth-title">استرجاع كلمة المرور</h1>
-          <p class="auth-sub">هنبعتلك رابط إعادة تعيين كلمة المرور على بريدك الإلكتروني</p>
-        </div>
-
-        <div class="field">
-          <label for="forgot-user">البريد الإلكتروني</label>
-          <div class="input-wrap">
-            <span class="input-icon">✉</span>
-            <input type="email" id="forgot-user" name="email" placeholder="مثال: ahmed@email.com" required />
-          </div>
-        </div>
-
-        <button type="submit" class="auth-btn" id="forgot-next">
-          <span class="auth-btn-label">إرسال رابط الاسترجاع</span>
-          <span class="auth-btn-spinner" aria-hidden="true"></span>
-        </button>
-        <div class="form-err" id="forgot-err"></div>
-
-        <div class="auth-footer">
-          <button type="button" class="link-btn" data-switch="login">العودة لتسجيل الدخول</button>
-        </div>
-      </form>
-        </div>
-      </div>
-    </div>
+    <div id="auth-root"></div>
   </div>
 
   <!-- ============== APP ============== -->
@@ -356,8 +210,10 @@
   <!-- ============== TOAST ============== -->
   <div id="toast" class="toast"></div>
 
-  <script src="firebase-init.js?v=20260813d"></script>
-  <script src="app.js?v=20260813d"></script>
+  <script src="firebase-init.js?v=20260813k"></script>
+  <script src="app.js?v=20260813k"></script>
+  <!-- React AuthCard (بني من تمبلت Vite/React) — بيركّب في #auth-root ويستخدم window.GameOverAuth -->
+  <script src="dist-auth/auth-card.js?v=20260813k"></script>
   <!-- React GradientMenu (بني من تمبلت Vite/React) — بيركّب في #main-nav -->
   <script src="dist-nav/main-nav.js?v=20260813j"></script>
 </body>

@@ -669,26 +669,6 @@
     saveUserData();
   }
 
-  // ============= FORM SWITCHING =============
-  function showForm(name) {
-    $$('.auth-form').forEach(f => f.classList.remove('active'));
-    const target = $('#form-' + name);
-    if (target) target.classList.add('active');
-    // Clear errors
-    $$('.form-err').forEach(e => e.textContent = '');
-    if (name === 'login' && $('#login-err')) {
-      const rem = localStorage.getItem(REMEMBER_KEY);
-      if (rem) $('#login-user').value = rem;
-      setTimeout(() => $('#login-user').focus(), 50);
-    }
-    if (name === 'signup' && $('#signup-user')) {
-      setTimeout(() => $('#signup-user').focus(), 50);
-    }
-    if (name === 'forgot' && $('#forgot-user')) {
-      setTimeout(() => $('#forgot-user').focus(), 50);
-    }
-  }
-
   // ============= AUTH ERROR MESSAGES (Arabic) =============
   function authErrorMessage(e) {
     const code = e && e.code;
@@ -706,37 +686,25 @@
   }
 
   // ============= AUTH HANDLERS =============
-  async function handleSignup(e) {
-    e.preventDefault();
-    const display = $('#signup-user').value.trim();
-    const email = $('#signup-email').value.trim();
-    const pass = $('#signup-pass').value;
-    const pass2 = $('#signup-pass2').value;
-    const err = $('#signup-err');
-    err.textContent = '';
+  // Pure functions (no DOM reads/writes of their own) so the React AuthCard
+  // can call them directly and own its own inputs/loading/error state. Each
+  // throws a plain Error with an Arabic message on failure.
+  async function authSignup({ displayName, email, password, confirmPassword }) {
+    const display = (displayName || '').trim();
+    email = (email || '').trim();
+    const pass = password || '';
+    const pass2 = confirmPassword || '';
 
     if (!/^[A-Za-z0-9_]{3,}$/.test(display)) {
-      err.textContent = 'الاسم المعروض يجب أن يكون 3 أحرف على الأقل (حروف إنجليزية، أرقام، _)';
-      return;
+      throw new Error('الاسم المعروض يجب أن يكون 3 أحرف على الأقل (حروف إنجليزية، أرقام، _)');
     }
-    if (!email) {
-      err.textContent = 'أدخل بريدك الإلكتروني';
-      return;
-    }
-    if (pass.length < 6) {
-      err.textContent = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
-      return;
-    }
-    if (pass !== pass2) {
-      err.textContent = 'كلمتا المرور غير متطابقتين';
-      return;
-    }
+    if (!email) throw new Error('أدخل بريدك الإلكتروني');
+    if (pass.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+    if (pass !== pass2) throw new Error('كلمتا المرور غير متطابقتين');
 
     const auth = cloudAuth();
-    if (!auth) { err.textContent = 'تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت'; return; }
+    if (!auth) throw new Error('تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت');
 
-    const btn = $('#form-signup .auth-btn');
-    btn.classList.add('loading');
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, pass);
       await cred.user.updateProfile({ displayName: display });
@@ -752,29 +720,18 @@
       await loginUser(cred.user, false);
       toast('تم إنشاء الحساب بنجاح ✓', 'ok');
     } catch (e2) {
-      err.textContent = authErrorMessage(e2);
-    } finally {
-      btn.classList.remove('loading');
+      throw new Error(authErrorMessage(e2));
     }
   }
 
-  async function handleLogin(e) {
-    e.preventDefault();
-    const email = $('#login-user').value.trim();
-    const pass = $('#login-pass').value;
-    const remember = $('#login-remember').checked;
-    const err = $('#login-err');
-    err.textContent = '';
+  async function authLogin({ email, password, remember }) {
+    email = (email || '').trim();
+    const pass = password || '';
 
-    if (!email || !pass) {
-      err.textContent = 'أدخل البريد الإلكتروني وكلمة المرور';
-      return;
-    }
+    if (!email || !pass) throw new Error('أدخل البريد الإلكتروني وكلمة المرور');
     const auth = cloudAuth();
-    if (!auth) { err.textContent = 'تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت'; return; }
+    if (!auth) throw new Error('تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت');
 
-    const btn = $('#form-login .auth-btn');
-    btn.classList.add('loading');
     try {
       // "تذكرني" يتحكم في مدة الجلسة: LOCAL تبقى بعد إغلاق المتصفح،
       // SESSION تنتهي بمجرد إغلاق التبويب. Firebase نفسه يدير التوكن،
@@ -789,11 +746,7 @@
       await loginUser(cred.user, true);
       toast('أهلاً ' + (cred.user.displayName || email) + ' 👋', 'ok');
     } catch (e2) {
-      err.textContent = authErrorMessage(e2);
-      $('#login-pass').value = '';
-      $('#login-pass').focus();
-    } finally {
-      btn.classList.remove('loading');
+      throw new Error(authErrorMessage(e2));
     }
   }
 
@@ -819,37 +772,38 @@
   }
 
   // ============= FORGOT PASSWORD — Firebase-hosted email reset link =============
-  async function handleForgot(e) {
-    e.preventDefault();
-    const email = $('#forgot-user').value.trim();
-    const err = $('#forgot-err');
-    err.textContent = '';
-    if (!email) { err.textContent = 'أدخل بريدك الإلكتروني'; return; }
+  // Returns the Arabic success/status message on resolve; throws only for a
+  // malformed email. Never reveals whether the address actually has an
+  // account, to avoid leaking which addresses are registered.
+  async function authForgot({ email }) {
+    email = (email || '').trim();
+    if (!email) throw new Error('أدخل بريدك الإلكتروني');
 
     const auth = cloudAuth();
-    if (!auth) { err.textContent = 'تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت'; return; }
+    if (!auth) throw new Error('تعذّر الاتصال بخدمة الحسابات، تحقق من الإنترنت');
 
-    const btn = $('#form-forgot .auth-btn');
-    btn.classList.add('loading');
     try {
       await auth.sendPasswordResetEmail(email);
-      toast('تم إرسال رابط استرجاع كلمة المرور إلى بريدك ✓', 'ok');
-      $('#forgot-user').value = '';
-      showForm('login');
+      return 'تم إرسال رابط استرجاع كلمة المرور إلى بريدك ✓';
     } catch (e2) {
-      // Deliberately generic message — do not reveal whether the email exists,
-      // to avoid leaking which addresses have accounts on the site.
       if (e2 && e2.code === 'auth/invalid-email') {
-        err.textContent = 'صيغة البريد الإلكتروني غير صحيحة';
-      } else {
-        toast('لو البريد مسجّل لدينا، ستصلك رسالة استرجاع كلمة المرور ✓', 'ok');
-        $('#forgot-user').value = '';
-        showForm('login');
+        throw new Error('صيغة البريد الإلكتروني غير صحيحة');
       }
-    } finally {
-      btn.classList.remove('loading');
+      return 'لو البريد مسجّل لدينا، ستصلك رسالة استرجاع كلمة المرور ✓';
     }
   }
+
+  // ============= BRIDGE FOR THE REACT AUTH CARD =============
+  // The login/signup/forgot-password screen is now a React component
+  // (see dist-auth/auth-card.js) mounted into #auth-root. It owns its own
+  // inputs, loading state, and error display, and calls back into this
+  // vanilla app only for the actual Firebase calls + post-login bootstrap.
+  window.GameOverAuth = {
+    login: authLogin,
+    signup: authSignup,
+    forgotPassword: authForgot,
+    getRememberedEmail: () => localStorage.getItem(REMEMBER_KEY) || '',
+  };
 
   // ============= SPLASH =============
   function initSplash() {
@@ -858,15 +812,13 @@
       setTimeout(() => {
         $('#splash').classList.add('hidden');
         $('#auth').classList.remove('hidden');
-        const rem = localStorage.getItem(REMEMBER_KEY);
-        if (rem) $('#login-user').value = rem;
-        setTimeout(() => $('#login-user').focus(), 100);
       }, 1300);
       return;
     }
     // Firebase Authentication is the single source of truth for "who is
     // logged in" — it restores the session itself (LOCAL/SESSION
-    // persistence set at login time), so we just react to it here.
+    // persistence set at login time), so we just react to it here. The
+    // remembered-email prefill is handled by the React AuthCard itself.
     let handled = false;
     auth.onAuthStateChanged(async (user) => {
       const reveal = () => $('#splash').classList.add('hidden');
@@ -876,9 +828,6 @@
       } else {
         setTimeout(() => {
           $('#auth').classList.remove('hidden');
-          const rem = localStorage.getItem(REMEMBER_KEY);
-          if (rem) $('#login-user').value = rem;
-          setTimeout(() => $('#login-user').focus(), 100);
         }, 1300);
       }
     });
@@ -2737,72 +2686,6 @@ Summoner Name: `;
     });
   }
 
-  // ============= PASSWORD STRENGTH =============
-  function updatePwStrength() {
-    const pw = $('#signup-pass').value;
-    const bar = $('#pw-strength .pw-bar');
-    if (!bar) return;
-    bar.classList.remove('med', 'strong');
-    if (pw.length === 0) return;
-    let score = 0;
-    if (pw.length >= 6) score++;
-    if (pw.length >= 10) score++;
-    if (/[A-Z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw)) score++;
-    if (/[^A-Za-z0-9]/.test(pw)) score++;
-    if (score >= 3) bar.classList.add('med');
-    if (score >= 4) bar.classList.add('strong');
-  }
-
-  // ============= PASSWORD TOGGLE =============
-  const EYE_SVG = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
-  const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
-
-  function bindPwToggles() {
-    $$('.toggle-pw').forEach(btn => {
-      btn.innerHTML = EYE_SVG;
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.target;
-        const input = document.getElementById(id);
-        if (!input) return;
-        if (input.type === 'password') {
-          input.type = 'text';
-          btn.innerHTML = EYE_OFF_SVG;
-        } else {
-          input.type = 'password';
-          btn.innerHTML = EYE_SVG;
-        }
-      });
-    });
-  }
-
-  // 3D tilt on the auth card that follows the mouse (sign-in-card-2)
-  function bindAuthTilt() {
-    const wrap = $('#auth-tilt');
-    if (!wrap) return;
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    let raf = null;
-    const onMove = e => {
-      const r = wrap.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      const px = (e.clientX - r.left) / r.width;
-      const py = (e.clientY - r.top) / r.height;
-      const rx = (0.5 - py) * 8;
-      const ry = (px - 0.5) * 10;
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        wrap.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
-      });
-    };
-    const onLeave = () => {
-      if (raf) cancelAnimationFrame(raf);
-      wrap.style.transform = '';
-    };
-    wrap.addEventListener('pointermove', onMove);
-    wrap.addEventListener('pointerleave', onLeave);
-  }
-
   // Dock magnifier — a bulletproof, layout-independent hover wave for the nav.
   // Button centers are measured once (transform never affects layout), and each
   // scale is eased with frame-rate-independent exponential smoothing, which is
@@ -2868,23 +2751,10 @@ Summoner Name: `;
 
   // ============= INIT =============
   function init() {
-    // Splash + auth
+    // Splash + auth (the login/signup/forgot-password UI itself is the
+    // React AuthCard mounted into #auth-root — see dist-auth/auth-card.js)
     initSplash();
 
-    // Form bindings
-    $('#form-login').addEventListener('submit', handleLogin);
-    $('#form-signup').addEventListener('submit', handleSignup);
-    $('#form-forgot').addEventListener('submit', handleForgot);
-
-    // Switch form links
-    $$('[data-switch]').forEach(btn => {
-      btn.addEventListener('click', () => showForm(btn.dataset.switch));
-    });
-
-    // Password strength + toggle
-    $('#signup-pass').addEventListener('input', updatePwStrength);
-    bindPwToggles();
-    bindAuthTilt();
     initDockMagnifier();
 
     // Logout
