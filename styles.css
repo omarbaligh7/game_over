@@ -2333,13 +2333,20 @@ button.status-clickable:hover .status-arrow {
 }
 
 /* ============ NAV DOCK — vanilla FloatingDock restyle ============ */
-/* The React nav (dist-nav/main-nav.js) renders its own glassmorphism
-   container on the inner <ul>, so the mount point stays transparent. */
 .nav {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  background: rgba(23, 19, 48, 0.96);
+  border: 1px solid var(--border-2);
+  border-radius: 30px;
+  box-shadow:
+    0 10px 34px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(168, 85, 247, 0.06) inset;
   position: relative;
   z-index: 50;
+  overflow: visible;
 }
 .nav-indicator {
   position: absolute;
@@ -2433,7 +2440,7 @@ button.status-clickable:hover .status-arrow {
 .nav-btn:focus-visible .nav-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 @media (max-width: 768px) {
-  .nav { order: 3; width: 100%; justify-content: center; padding: 0; gap: 0; }
+  .nav { order: 3; width: auto; justify-content: center; padding: 8px 10px; gap: 6px; }
   .nav-btn { width: 36px; height: 36px; padding: 0; font-size: 0.8rem; }
   .nav-tip { display: none; }
 }
