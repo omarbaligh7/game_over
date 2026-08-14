@@ -26,7 +26,7 @@
 
   <link rel="stylesheet" href="styles.css?v=20260813s" />
   <link rel="stylesheet" href="dist-nav/main-nav.css?v=20260813r" />
-  <link rel="stylesheet" href="dist-landing/landing-hero.css?v=20260814b" />
+  <link rel="stylesheet" href="dist-landing/landing-hero.css?v=20260814d" />
   <link rel="stylesheet" href="dist-auth/auth-card.css?v=20260813n" />
 </head>
 <body>
@@ -228,7 +228,7 @@
        الباندل بيتضمن كود React بيقرأ process.env.NODE_ENV من غير polyfill، والمتصفح معندوش global process —
        فبنعرّف shim صغير قبله عشان الباندل يشتغل في وضع production من غير ما نلمس الملف نفسه. -->
   <script>window.process = { env: { NODE_ENV: 'production' } };</script>
-  <script src="dist-landing/landing-hero.js?v=20260814b"></script>
+  <script src="dist-landing/landing-hero.js?v=20260814d"></script>
   <!-- React AuthCard (بني من تمبلت Vite/React) — بيركّب في #auth-root ويستخدم window.GameOverAuth -->
   <script src="dist-auth/auth-card.js?v=20260813n"></script>
   <!-- React GradientMenu (بني من تمبلت Vite/React) — بيركّب في #main-nav -->
