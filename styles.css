@@ -858,23 +858,45 @@ input, select, textarea { font-family: inherit; color: inherit; }
   opacity: 0.5;
 }
 .card {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02) 55%, rgba(255, 255, 255, 0.06)),
-    var(--glass-tint);
-  border: 1px solid var(--glass-border);
+  position: relative;
+  overflow: hidden;
+  background: transparent;
   border-radius: var(--radius-3xl);
   padding: 1.5rem;
-  position: relative;
-  box-shadow: var(--glass-stroke), 0 24px 50px rgba(0, 0, 0, 0.32);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  transition: transform 0.3s var(--ease-out), border-color 0.25s, box-shadow 0.3s;
+  box-shadow: 0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1);
+  transition: all 0.7s cubic-bezier(0.175, 0.885, 0.32, 2.2);
   animation: cardIn 0.45s var(--ease-out) backwards;
   will-change: transform;
   transform-style: preserve-3d;
-  overflow: hidden;
   --m-x: 50%;
   --m-y: 50%;
+}
+/* Liquid glass — layer 1: frosted blur + template distortion (behind content) */
+.card-glass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  filter: url(#glass-distortion);
+  isolation: isolate;
+  z-index: 0;
+  pointer-events: none;
+}
+/* Liquid glass — layer 2: white/25 tint + glossy inner stroke */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: inset 2px 2px 1px 0 rgba(255, 255, 255, 0.5), inset -1px -1px 1px 1px rgba(255, 255, 255, 0.5);
+  z-index: 1;
+  pointer-events: none;
+}
+.card-content {
+  position: relative;
+  z-index: 3;
 }
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(16px) scale(0.97); }
@@ -890,8 +912,6 @@ input, select, textarea { font-family: inherit; color: inherit; }
 }
 .card:hover {
   transform: translateY(-4px);
-  border-color: rgba(192, 132, 252, 0.50);
-  box-shadow: var(--glass-stroke), 0 24px 50px rgba(0, 0, 0, 0.32), 0 0 28px rgba(168, 85, 247, 0.18);
 }
 /* GlareCard-style moving spotlight (Aceternity) — driven by initCardGlare() */
 .card::before {
@@ -907,17 +927,17 @@ input, select, textarea { font-family: inherit; color: inherit; }
   opacity: 0;
   transition: opacity 0.3s ease;
   pointer-events: none;
-  z-index: 2;
+  z-index: 4;
 }
 .card.glare-on::before {
   opacity: 1;
 }
 .card.glare-on {
-  transition: transform 0.15s ease-out, border-color 0.25s, box-shadow 0.3s;
+  transition: transform 0.15s ease-out, box-shadow 0.3s;
 }
 @media (prefers-reduced-motion: reduce) {
   .card.glare-on {
-    transition: transform 0.3s var(--ease-out), border-color 0.25s, box-shadow 0.3s;
+    transition: transform 0.3s var(--ease-out), box-shadow 0.3s;
   }
 }
 .card-image {
@@ -927,11 +947,9 @@ input, select, textarea { font-family: inherit; color: inherit; }
   border-radius: 16px;
   margin-bottom: 0.9rem;
   display: block;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: var(--glass-stroke);
-  transition: transform 0.4s var(--ease-out);
+  transition: transform 0.7s cubic-bezier(0.175, 0.885, 0.32, 2.2);
 }
-.card:hover .card-image { transform: scale(1.03); }
+.card:hover .card-image { transform: scale(1.05); }
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -998,12 +1016,16 @@ input, select, textarea { font-family: inherit; color: inherit; }
 
 /* Starred cards get a distinguishing highlighted frame */
 .card.starred {
-  border-color: rgba(251, 191, 36, 0.55);
-  box-shadow: var(--glass-stroke), 0 0 0 2px rgba(251, 191, 36, 0.22), var(--glass-shadow);
+  box-shadow:
+    0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1),
+    0 0 0 2px rgba(251, 191, 36, 0.45),
+    0 0 24px rgba(251, 191, 36, 0.20);
 }
 .card.starred:hover {
-  border-color: var(--gold);
-  box-shadow: var(--glass-stroke), 0 0 0 2px rgba(251, 191, 36, 0.32), 0 0 24px rgba(251, 191, 36, 0.18), var(--glass-shadow);
+  box-shadow:
+    0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1),
+    0 0 0 2px rgba(251, 191, 36, 0.55),
+    0 0 30px rgba(251, 191, 36, 0.28);
 }
 
 .status {
@@ -2481,23 +2503,47 @@ button.status-clickable:hover .status-arrow {
   .auth-tilt { transition: none; }
 }
 
-/* ============ NAV DOCK — vanilla FloatingDock restyle ============ */
+/* ============ NAV DOCK — liquid-glass FloatingDock (template-exact) ============ */
 .nav {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 14px 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--glass-border);
-  border-radius: 30px;
-  box-shadow:
-    var(--glass-stroke),
-    0 10px 34px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  padding: 12px 14px 14px;
+  background: transparent;
+  border-radius: 24px;
+  box-shadow: 0 6px 6px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.1);
+  transition: all 0.7s cubic-bezier(0.175, 0.885, 0.32, 2.2);
   position: relative;
   z-index: 50;
   overflow: visible;
+}
+/* Liquid glass — layer 1: frosted blur + template distortion */
+.nav::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  filter: url(#glass-distortion);
+  isolation: isolate;
+  z-index: -1;
+  pointer-events: none;
+}
+/* Liquid glass — layer 2: white/25 tint + glossy inner stroke */
+.nav::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: inset 2px 2px 1px 0 rgba(255, 255, 255, 0.5), inset -1px -1px 1px 1px rgba(255, 255, 255, 0.5);
+  z-index: -1;
+  pointer-events: none;
+}
+.nav:hover {
+  padding: 16px 18px 18px;
+  border-radius: 32px;
 }
 .nav-indicator {
   position: absolute;
@@ -2537,10 +2583,10 @@ button.status-clickable:hover .status-arrow {
   width: 20px;
   height: 20px;
   display: block;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.7s cubic-bezier(0.175, 0.885, 0.32, 2.2);
 }
-.nav-btn:hover .nav-icon { transform: scale(1.15); }
-.nav-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.20); }
+.nav-btn:hover .nav-icon { transform: scale(1.1); }
+.nav-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.10); }
 .nav-btn:active { color: var(--text); }
 .nav-btn.active { color: #fff; }
 .nav-btn.active:hover { color: #fff; }

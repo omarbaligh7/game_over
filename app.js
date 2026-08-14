@@ -1662,6 +1662,8 @@
 
       return `
         <div class="card ${isStarActive(a) ? 'starred' : ''}" style="animation-delay:${i * 0.03}s">
+          <div class="card-glass" aria-hidden="true"></div>
+          <div class="card-content">
           ${a.imageUrl ? `<img src="${esc(a.imageUrl)}" alt="" class="card-image" />` : ''}
           <div class="card-head">
             <div>
@@ -1723,6 +1725,7 @@
 
           ${infoToggleHTML}
           ${a.notes ? `<div class="acc-notes">📌 <b>ملاحظة:</b> ${esc(a.notes)}</div>` : ''}
+          </div>
         </div>
       `;
     }).join('');
