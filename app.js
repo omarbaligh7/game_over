@@ -2858,10 +2858,8 @@ Summoner Name: `;
     loadUsdToEgpRate();
     setInterval(loadUsdToEgpRate, 60 * 1000);
 
-    // Modal
+    // Modal — يُغلق فقط بزر الإغلاق العلوي (X): لا إغلاق بالضغط على الخلفية ولا بمفتاح Escape
     $('#modal-close').addEventListener('click', closeModal);
-    $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
     // Hours input
     $('#hours-input').addEventListener('input', e => {
